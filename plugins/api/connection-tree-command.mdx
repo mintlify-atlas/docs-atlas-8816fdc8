@@ -1,0 +1,321 @@
+---
+title: "connection-tree Command"
+description: "Returns hierarchical database structure for browsing (databases, tables, columns)"
+---
+
+## Overview
+
+The `connection-tree` command returns a hierarchical tree of database objects that the host renders as a browsable sidebar. Supports nested structures like databases → schemas → tables → columns.
+
+## Command Invocation
+
+```bash
+<plugin-binary> connection-tree
+# Alternative alias:
+<plugin-binary> tree
+```
+
+**Stdin:** JSON-encoded `ConnectionTreeRequest` object
+
+**Stdout:** JSON-encoded `ConnectionTreeResponse` object
+
+**Timeout:** 30 seconds
+
+**Required:** No - optional command for enhanced browsing UX
+
+## Request Parameters
+
+<ParamField name="connection" type="object" required>
+  Plugin-defined key-value map with connection credentials. Same format as `exec` command.
+</ParamField>
+
+## Response Structure
+
+<ResponseField name="nodes" type="ConnectionTreeNode[]" required>
+  Top-level array of tree nodes. Each node can have nested children.
+</ResponseField>
+
+### ConnectionTreeNode Fields
+
+<ParamField name="key" type="string" required>
+  Unique identifier within the tree (e.g., `"db:mydb"`, `"mydb.users"`)
+</ParamField>
+
+<ParamField name="label" type="string" required>
+  User-visible text displayed in the tree (e.g., database name, table name)
+</ParamField>
+
+<ParamField name="nodeType" type="enum">
+  Optional hint for icon rendering:
+  - `NODE_TYPE_DATABASE` (1): Database node
+  - `NODE_TYPE_TABLE` (2): Table node
+  - `NODE_TYPE_COLUMN` (3): Column node
+  - `NODE_TYPE_SCHEMA` (4): Schema node
+  - `NODE_TYPE_VIEW` (5): View node
+  - `NODE_TYPE_ACTION` (6): Action leaf (not a database object)
+  - `NODE_TYPE_COLLECTION` (7): Document collection (MongoDB, etc.)
+  - `NODE_TYPE_KEY` (8): Key-value entry (Redis, etc.)
+</ParamField>
+
+<ParamField name="children" type="ConnectionTreeNode[]">
+  Array of child nodes (recursive structure)
+</ParamField>
+
+<ParamField name="actions" type="ConnectionTreeAction[]">
+  Array of actions available for this node (e.g., "Select rows", "Drop table")
+</ParamField>
+
+### ConnectionTreeAction Fields
+
+<ParamField name="type" type="string" required>
+  Machine name for the action. Common types:
+  - `"select"`: Query data from this node
+  - `"describe"`: Show structure/schema
+  - `"create-database"`: Create new database
+  - `"drop-database"`: Delete database
+  - `"create-table"`: Create new table
+  - `"drop-table"`: Delete table
+</ParamField>
+
+<ParamField name="title" type="string" required>
+  Human-readable action label shown in context menus
+</ParamField>
+
+<ParamField name="query" type="string" required>
+  Plugin-interpreted query string to execute when action is triggered
+</ParamField>
+
+<ParamField name="hidden" type="boolean">
+  If true, action is not shown in context menus (used for default double-click actions)
+</ParamField>
+
+<ParamField name="newTab" type="boolean">
+  If true, host opens action result in a new tab instead of current tab
+</ParamField>
+
+## Example Implementation
+
+From `plugins/mysql/main.go`:
+
+```go
+func (m *mysqlPlugin) ConnectionTree(ctx context.Context, req *plugin.ConnectionTreeRequest) (*plugin.ConnectionTreeResponse, error) {
+    dsn, err := buildDSN(req.Connection)
+    if err != nil || dsn == "" {
+        return &plugin.ConnectionTreeResponse{}, nil
+    }
+    
+    db, err := sql.Open("mysql", dsn)
+    if err != nil {
+        return &plugin.ConnectionTreeResponse{}, nil
+    }
+    defer db.Close()
+
+    // If the user supplied a database explicitly we only show that one
+    filterDB := getDatabaseFromConn(req.Connection)
+
+    rows, err := db.Query("SHOW DATABASES")
+    if err != nil {
+        return &plugin.ConnectionTreeResponse{}, nil
+    }
+    defer rows.Close()
+
+    var dbNodes []*plugin.ConnectionTreeNode
+    for rows.Next() {
+        var dbname string
+        if err := rows.Scan(&dbname); err != nil {
+            continue
+        }
+        if filterDB != "" && dbname != filterDB {
+            continue
+        }
+        
+        // For each database expose a child list of tables
+        tables := []*plugin.ConnectionTreeNode{}
+        tblRows, err := db.Query(fmt.Sprintf("SHOW TABLES FROM `%s`", dbname))
+        if err == nil {
+            for tblRows.Next() {
+                var tbl string
+                if tblRows.Scan(&tbl) == nil {
+                    tables = append(tables, &plugin.ConnectionTreeNode{
+                        Key:      dbname + "." + tbl,
+                        Label:    tbl,
+                        NodeType: plugin.ConnectionTreeNodeTypeTable,
+                        Actions: []*plugin.ConnectionTreeAction{
+                            {
+                                Type:   plugin.ConnectionTreeActionSelect,
+                                Title:  "Select rows",
+                                Query:  fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT 100;", dbname, tbl),
+                                Hidden: true,
+                                NewTab: true,
+                            },
+                            {
+                                Type:  plugin.ConnectionTreeActionDropTable,
+                                Title: "Drop table",
+                                Query: fmt.Sprintf("DROP TABLE `%s`.`%s`;", dbname, tbl),
+                            },
+                        },
+                    })
+                }
+            }
+            tblRows.Close()
+        }
+        
+        dbNodes = append(dbNodes, &plugin.ConnectionTreeNode{
+            Key:      dbname,
+            Label:    dbname,
+            NodeType: plugin.ConnectionTreeNodeTypeDatabase,
+            Children: tables,
+            Actions: []*plugin.ConnectionTreeAction{
+                {
+                    Type:  plugin.ConnectionTreeActionCreateTable,
+                    Title: "Create table",
+                    Query: fmt.Sprintf("CREATE TABLE `%s`.`new_table` (\n  `id` INT NOT NULL AUTO_INCREMENT,\n  PRIMARY KEY (`id`)\n);", dbname),
+                },
+                {
+                    Type:  plugin.ConnectionTreeActionDropDatabase,
+                    Title: "Drop database",
+                    Query: fmt.Sprintf("DROP DATABASE `%s`;", dbname),
+                },
+            },
+        })
+    }
+
+    // Prepend a leaf node for the create-database action
+    createNode := &plugin.ConnectionTreeNode{
+        Key:      "__create_database__",
+        Label:    "New database",
+        NodeType: plugin.ConnectionTreeNodeTypeAction,
+        Actions: []*plugin.ConnectionTreeAction{
+            {
+                Type:   plugin.ConnectionTreeActionCreateDatabase,
+                Title:  "Create database",
+                Query:  "CREATE DATABASE `new_database`;",
+                Hidden: true,
+            },
+        },
+    }
+
+    return &plugin.ConnectionTreeResponse{
+        Nodes: append([]*plugin.ConnectionTreeNode{createNode}, dbNodes...),
+    }, nil
+}
+```
+
+## Request Format (stdin)
+
+```json
+{
+  "connection": {
+    "credential_blob": "{\"form\":\"basic\",\"values\":{\"host\":\"127.0.0.1\",\"user\":\"root\",\"password\":\"secret\"}}"
+  }
+}
+```
+
+## Response Format (stdout)
+
+```json
+{
+  "nodes": [
+    {
+      "key": "__create_database__",
+      "label": "New database",
+      "nodeType": "NODE_TYPE_ACTION",
+      "actions": [
+        {
+          "type": "create-database",
+          "title": "Create database",
+          "query": "CREATE DATABASE `new_database`;",
+          "hidden": true
+        }
+      ]
+    },
+    {
+      "key": "mydb",
+      "label": "mydb",
+      "nodeType": "NODE_TYPE_DATABASE",
+      "children": [
+        {
+          "key": "mydb.users",
+          "label": "users",
+          "nodeType": "NODE_TYPE_TABLE",
+          "actions": [
+            {
+              "type": "select",
+              "title": "Select rows",
+              "query": "SELECT * FROM `mydb`.`users` LIMIT 100;",
+              "hidden": true,
+              "newTab": true
+            },
+            {
+              "type": "drop-table",
+              "title": "Drop table",
+              "query": "DROP TABLE `mydb`.`users`;"
+            }
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "type": "create-table",
+          "title": "Create table",
+          "query": "CREATE TABLE `mydb`.`new_table` (\n  `id` INT NOT NULL AUTO_INCREMENT,\n  PRIMARY KEY (`id`)\n);"
+        },
+        {
+          "type": "drop-database",
+          "title": "Drop database",
+          "query": "DROP DATABASE `mydb`;"
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Action Execution Flow
+
+1. User right-clicks a node or double-clicks it
+2. Host shows context menu with non-hidden actions
+3. User selects an action
+4. Host calls the plugin's `exec` command with the action's `query` string
+5. Result is displayed in current or new tab based on `newTab` flag
+
+## Common Patterns
+
+### Default Click Action
+
+Use `hidden: true` + `newTab: true` for the primary action triggered by double-clicking a node:
+
+```go
+{
+    Type:   "select",
+    Title:  "Select rows",
+    Query:  "SELECT * FROM ...",
+    Hidden: true,  // Don't show in context menu
+    NewTab: true,  // Open in new tab
+}
+```
+
+### DDL Actions
+
+Provide template queries for creating/dropping objects:
+
+```go
+{
+    Type:  "create-table",
+    Title: "Create table",
+    Query: "CREATE TABLE `db`.`new_table` (\n  `id` INT AUTO_INCREMENT,\n  PRIMARY KEY (`id`)\n);",
+}
+```
+
+## Error Handling
+
+- If connection fails, return an empty tree: `{"nodes": []}`
+- Do not write to stderr or exit with non-zero status unless a fatal error occurs
+- The host gracefully handles empty trees by showing "No objects found"
+
+## Notes
+
+- Tree structure is plugin-defined - SQL databases typically use database → table → column hierarchy
+- Document stores might use database → collection hierarchy
+- Key-value stores might flatten to a single level or group by namespace
+- Action queries are executed via the `exec` command, so use the same query syntax

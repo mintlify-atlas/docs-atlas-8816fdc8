@@ -1,0 +1,285 @@
+---
+title: Browsing Database Objects
+description: Navigate your database schema with the interactive connection tree
+---
+
+# Browsing Database Objects
+
+QueryBox's connection tree provides a visual, hierarchical view of your database structure. Browse databases, schemas, tables, columns, and other objects without writing queries.
+
+## Understanding the Connection Tree
+
+### Tree Structure
+
+The connection tree displays a hierarchy that adapts to your database type:
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```
+    Connection Name
+    └── Database
+        └── Schema (e.g., public)
+            ├── Tables
+            │   └── Columns
+            └── Views
+                └── Columns
+    ```
+  </Tab>
+  
+  <Tab title="MySQL">
+    ```
+    Connection Name
+    └── Database
+        ├── Tables
+        │   └── Columns
+        └── Views
+            └── Columns
+    ```
+  </Tab>
+  
+  <Tab title="SQLite">
+    ```
+    Connection Name (Database File)
+    ├── Tables
+    │   └── Columns
+    └── Views
+        └── Columns
+    ```
+  </Tab>
+  
+  <Tab title="Redis">
+    ```
+    Connection Name
+    └── Keys (grouped by pattern or prefix)
+    ```
+  </Tab>
+  
+  <Tab title="ArangoDB">
+    ```
+    Connection Name
+    ├── Collections (Documents)
+    └── Graphs
+    ```
+  </Tab>
+</Tabs>
+
+### Node Icons
+
+Each node type has a distinct icon for quick identification:
+
+- **Server** - Connection root
+- **Database** - Individual database
+- **Schema** - Namespace or schema
+- **Table** - Data table
+- **View** - Virtual table
+- **Column** - Table field
+- **Collection** - Document collection
+- **Key** - Key-value pair
+- **Action** - Executable operation (appears as a button)
+
+<Note>
+  When a query is running for a node, the icon changes to a loading spinner for immediate feedback.
+</Note>
+
+## Loading the Tree
+
+<Steps>
+  <Step title="Select a Connection">
+    Click a connection name in the Connections panel. If the tree hasn't been loaded yet, QueryBox automatically fetches it.
+  </Step>
+
+  <Step title="Wait for Tree Population">
+    A loading spinner appears on the connection icon while QueryBox:
+    1. Retrieves credentials from the OS keyring
+    2. Calls the plugin's `connection-tree` command
+    3. Parses and displays the hierarchy
+    
+    This usually takes 1-3 seconds depending on database size.
+  </Step>
+
+  <Step title="Browse the Hierarchy">
+    Click any node with a disclosure triangle to expand or collapse its children.
+    
+    Container nodes (databases, schemas) toggle on single click. Data nodes (tables, collections) run a default query.
+  </Step>
+</Steps>
+
+## Interacting with Nodes
+
+### Single Click Behavior
+
+- **Connection Root** - Loads (or refreshes) the tree structure
+- **Container Nodes** (databases, schemas) - Expands or collapses children
+- **Data Nodes** (tables, views, collections) - Executes a default `SELECT` query and opens a result tab
+- **Action Nodes** - Triggers the action immediately (e.g., "New Database")
+
+### Double Click Behavior
+
+Double-clicking a connection root opens the Connections window, allowing you to edit or delete the connection.
+
+### Hover Actions
+
+Many nodes display action buttons when you hover over them:
+
+- **Select** - Query all rows/documents (adds `LIMIT 100` automatically)
+- **Describe** - Show table structure (columns, types, constraints)
+- **Drop** - Delete the object (requires confirmation)
+- **Create** - Add a new child object (e.g., "New Table" under a database)
+
+Click an action button to execute it. Some actions open a form modal, while others run immediately.
+
+<Warning>
+  Destructive actions (like "Drop Table") show a confirmation dialog with the exact query that will be executed. Review carefully before proceeding.
+</Warning>
+
+## Tree Actions
+
+### Create Actions
+
+Plugins may provide "New Database", "New Table", or similar actions. These appear as button-styled nodes at the top of their parent's children.
+
+<Steps>
+  <Step title="Click the Action Node">
+    For example, click **"+ New Database"** under a server node.
+  </Step>
+
+  <Step title="Fill the Form">
+    A modal dialog appears with fields for the new object:
+    - Database name
+    - Optional parameters (encoding, collation, etc.)
+    
+    The form adapts based on the database type and action.
+  </Step>
+
+  <Step title="Submit">
+    Click **Create** to execute the action. QueryBox:
+    1. Runs the generated query (e.g., `CREATE DATABASE mydb`)
+    2. Refreshes the connection tree to show the new object
+    3. Displays any errors if the action fails
+  </Step>
+</Steps>
+
+### Select Actions
+
+Clicking a table or collection node runs a `SELECT` query:
+
+- **SQL Tables** - `SELECT * FROM table LIMIT 100`
+- **Collections** - Fetch first 100 documents
+- **Keys** - Retrieve key value
+
+Results open in a new workspace tab. You can modify the query in the editor and re-run it.
+
+### Describe Actions
+
+Use "Describe" or "Show Columns" to inspect table structure:
+
+- **Column Names** - Field identifiers
+- **Data Types** - `VARCHAR`, `INT`, `TEXT`, etc.
+- **Constraints** - `NOT NULL`, `PRIMARY KEY`, `UNIQUE`
+- **Defaults** - Default values for new rows
+
+### Drop Actions
+
+Deleting database objects requires explicit confirmation:
+
+<Steps>
+  <Step title="Hover Over the Node">
+    Find the table, view, or database you want to delete.
+  </Step>
+
+  <Step title="Click the Drop Action">
+    A **Drop** or **Delete** button appears on hover. Click it.
+  </Step>
+
+  <Step title="Review the Query">
+    A dialog displays the exact SQL/command that will be executed:
+    
+    ```sql
+    DROP TABLE production.users
+    ```
+    
+    **This cannot be undone.**
+  </Step>
+
+  <Step title="Confirm or Cancel">
+    Click **Execute** to proceed or **Cancel** to abort.
+    
+    If you confirm, QueryBox runs the query and refreshes the tree.
+  </Step>
+</Steps>
+
+## Searching the Tree
+
+### Connection Search
+
+Use the search bar at the top of the Connections panel to filter connections by name. Only matching connections remain visible.
+
+<Note>
+  The search filters connection roots only, not individual tables or databases. To find a specific table, expand the connection and browse manually.
+</Note>
+
+### Expanding All Nodes
+
+Click the disclosure triangle next to a connection to expand its entire tree. Subsequent clicks toggle expansion on/off.
+
+## Refreshing the Tree
+
+### Manual Refresh
+
+To reload a connection's tree structure:
+
+<Steps>
+  <Step title="Hover Over the Connection">
+    Move your mouse over the connection name in the sidebar.
+  </Step>
+
+  <Step title="Click the Connect Button">
+    A **Connect** icon (circular arrow) appears. Click it to refresh.
+  </Step>
+
+  <Step title="Wait for Update">
+    QueryBox clears the cached tree and fetches a fresh copy from the database.
+    
+    New tables, dropped objects, and schema changes appear immediately.
+  </Step>
+</Steps>
+
+### Automatic Refresh
+
+QueryBox automatically refreshes the tree after successful create or drop actions. You don't need to manually refresh after running:
+
+- `CREATE DATABASE`
+- `CREATE TABLE`
+- `DROP TABLE`
+- Other structural changes via tree actions
+
+## Active Connection Indicator
+
+The currently active connection displays:
+
+- A **green dot** badge on its server icon
+- Highlighted background in the tree
+
+This indicates which connection's query editor and results are currently in focus.
+
+## Node Context
+
+When you run a query from a tree node, QueryBox captures the full context:
+
+- **Connection** - The database server
+- **Database** - The selected database (from the node path)
+- **Node Type** - Table, view, collection, etc.
+- **Action** - The query or command
+
+This context enables features like:
+- Refresh buttons (re-run the same query)
+- Explain buttons (analyze query performance)
+- Breadcrumb navigation (show where the query came from)
+
+## Tips
+
+- **Keyboard Navigation**: Use arrow keys to navigate the tree (up/down to move, right/left to expand/collapse)
+- **Bulk Operations**: To work with multiple tables, open each in a separate tab and compare results
+- **Large Schemas**: If your database has hundreds of tables, use the connection search to filter the tree
+- **Plugin Differences**: Not all plugins support all actions (e.g., Redis doesn't have "Describe"); check the plugin documentation
+- **Cached Trees**: Trees remain cached until you refresh or restart QueryBox; schema changes won't appear until you refresh

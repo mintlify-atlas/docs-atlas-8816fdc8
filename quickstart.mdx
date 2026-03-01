@@ -1,80 +1,547 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Get started with QueryBox in minutes. Connect to your first database and execute queries.
 ---
 
-## Get started in three steps
+## Overview
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide will walk you through:
+- Launching QueryBox for the first time
+- Creating your first database connection
+- Exploring database objects
+- Executing your first query
+- Understanding query results
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  This quickstart assumes you've already [installed QueryBox](/installation). If not, complete the installation first.
 </Note>
+
+## Launch QueryBox
+
+Start the application using your platform's method:
+
+<Tabs>
+  <Tab title="Windows">
+    Double-click `querybox.exe` or run from Command Prompt:
+    ```bash
+    querybox.exe
+    ```
+  </Tab>
+  <Tab title="macOS">
+    Double-click `QueryBox.app` or run from Terminal:
+    ```bash
+    open QueryBox.app
+    ```
+  </Tab>
+  <Tab title="Linux">
+    Run the executable:
+    ```bash
+    ./querybox
+    ```
+  </Tab>
+</Tabs>
+
+The main query workspace window will open, along with a connections management window.
+
+## Create Your First Connection
+
+Let's create a connection using SQLite, which doesn't require a separate database server.
+
+<Steps>
+  <Step title="Open Connections Window">
+    If the connections window isn't visible:
+    - Click the **Connections** menu item, or
+    - Use the keyboard shortcut to open it
+    
+    The connections window displays all saved database connections.
+  </Step>
+  
+  <Step title="Click New Connection">
+    Click the **New Connection** button to open the connection creation dialog.
+  </Step>
+  
+  <Step title="Select Database Type">
+    From the database type dropdown, select **SQLite**.
+    
+    You'll see two authentication options:
+    - **Local File** - For local SQLite database files
+    - **Turso Cloud** - For Turso cloud-hosted SQLite databases
+    
+    Select **Local File** for this quickstart.
+  </Step>
+  
+  <Step title="Configure Connection">
+    Fill in the connection details:
+    
+    <ParamField path="name" type="string" required>
+      A friendly name for your connection (e.g., "My Test Database")
+    </ParamField>
+    
+    <ParamField path="path" type="string" required>
+      Path to your SQLite database file. You can:
+      - Browse to an existing `.db` or `.sqlite` file
+      - Enter a path to create a new database
+      - Use `:memory:` for an in-memory database (lost when connection closes)
+    </ParamField>
+    
+    **Example**:
+    ```
+    Name: Test Database
+    Path: /Users/yourname/test.db
+    ```
+    
+    <Tip>
+      For a quick test, use `:memory:` as the path. This creates a temporary database perfect for experimentation.
+    </Tip>
+  </Step>
+  
+  <Step title="Test the Connection">
+    Before saving, click **Test Connection** to verify the SQLite plugin can access the database.
+    
+    You should see a green checkmark with "Connection successful" message.
+    
+    <Warning>
+      If testing fails:
+      - Verify the file path is correct and accessible
+      - Check file permissions (read/write access required)
+      - Ensure the directory exists for new databases
+    </Warning>
+  </Step>
+  
+  <Step title="Save Connection">
+    Click **Save** or **Create Connection** to store the connection.
+    
+    Your new connection appears in the connections list. QueryBox has:
+    - Stored connection metadata in its internal SQLite database
+    - Saved credentials securely using your OS keyring (or encrypted fallback)
+    - Emitted a `connection:created` event to update the UI
+  </Step>
+</Steps>
+
+## Explore Database Objects
+
+Now that you have a connection, let's explore its structure using the connection tree.
+
+<Steps>
+  <Step title="Open Connection Tree">
+    In the main query window, you'll see a sidebar with a tree view. Select your newly created connection from the dropdown at the top.
+    
+    The plugin will execute the `connection-tree` command to fetch the database structure.
+  </Step>
+  
+  <Step title="Browse Database Objects">
+    For SQLite, the tree shows:
+    
+    ```
+    📁 Test Database
+    ├── 📊 Tables
+    │   └── (any existing tables)
+    ├── 🔍 Indexes
+    └── 👁️ Views
+    ```
+    
+    Click the arrows to expand and collapse sections.
+    
+    <Note>
+      If you used `:memory:` or a new database file, the tree will be empty initially. We'll create tables in the next section.
+    </Note>
+  </Step>
+  
+  <Step title="Use Node Actions">
+    Some tree nodes have action buttons. For example:
+    - Clicking a table shows its columns
+    - Right-clicking may show actions like "Show CREATE TABLE" or "Browse Data"
+    
+    These actions send queries to the database automatically.
+  </Step>
+</Steps>
+
+## Execute Your First Query
+
+Let's create a sample table and run some queries.
+
+<Steps>
+  <Step title="Create a Table">
+    In the query editor (main text area), enter:
+    
+    ```sql
+    CREATE TABLE users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    ```
+    
+    Click the **Execute** button or press `Ctrl+Enter` (Windows/Linux) or `Cmd+Enter` (macOS).
+    
+    <Accordion title="What happens behind the scenes">
+      When you execute a query:
+      
+      1. QueryBox calls `PluginManager.ExecPlugin()`
+      2. The SQLite plugin process is spawned
+      3. Your query is sent via stdin as JSON:
+         ```json
+         {
+           "connection": {"path": "/path/to/test.db"},
+           "query": "CREATE TABLE users ...",
+           "options": {}
+         }
+         ```
+      4. The plugin executes the query and returns results via stdout
+      5. The plugin process exits
+      6. Results are displayed in the results pane
+    </Accordion>
+    
+    **Expected result**: "Query executed successfully" or similar message.
+  </Step>
+  
+  <Step title="Insert Sample Data">
+    Add some test data:
+    
+    ```sql
+    INSERT INTO users (name, email) VALUES
+      ('Alice Smith', 'alice@example.com'),
+      ('Bob Jones', 'bob@example.com'),
+      ('Carol White', 'carol@example.com');
+    ```
+    
+    Execute the query. You should see "3 rows affected" or similar.
+  </Step>
+  
+  <Step title="Query the Data">
+    Now retrieve the data:
+    
+    ```sql
+    SELECT * FROM users ORDER BY created_at DESC;
+    ```
+    
+    Execute the query. The results pane displays a formatted table:
+    
+    | id | name | email | created_at |
+    |----|------|-------|------------|
+    | 3 | Carol White | carol@example.com | 2026-03-01 10:30:15 |
+    | 2 | Bob Jones | bob@example.com | 2026-03-01 10:30:15 |
+    | 1 | Alice Smith | alice@example.com | 2026-03-01 10:30:15 |
+  </Step>
+  
+  <Step title="Refresh Connection Tree">
+    After creating tables, refresh the connection tree (click the refresh icon) to see your new `users` table appear under the Tables section.
+    
+    Expand the `users` table to see its columns:
+    ```
+    📊 users
+    ├── 🔑 id (INTEGER)
+    ├── 📝 name (TEXT)
+    ├── 📧 email (TEXT)
+    └── 📅 created_at (TEXT)
+    ```
+  </Step>
+</Steps>
+
+<Check>
+  Congratulations! You've successfully created a connection, explored database objects, and executed queries.
+</Check>
+
+## Understanding Query Results
+
+QueryBox displays results in different formats depending on the query type and database:
+
+<Tabs>
+  <Tab title="SQL Results">
+    SELECT queries return `SqlResult` with columns and rows:
+    
+    ```json
+    {
+      "columns": ["id", "name", "email"],
+      "rows": [
+        [1, "Alice Smith", "alice@example.com"],
+        [2, "Bob Jones", "bob@example.com"]
+      ]
+    }
+    ```
+    
+    Displayed as an interactive table with:
+    - Column headers
+    - Sortable columns (click header to sort)
+    - Scrollable rows
+    - Copy to clipboard functionality
+  </Tab>
+  
+  <Tab title="Document Results">
+    Document databases (like ArangoDB) return `DocumentResult`:
+    
+    ```json
+    {
+      "documents": [
+        {"_id": "users/123", "name": "Alice"},
+        {"_id": "users/456", "name": "Bob"}
+      ]
+    }
+    ```
+    
+    Displayed as formatted JSON with syntax highlighting.
+  </Tab>
+  
+  <Tab title="Key-Value Results">
+    Redis and other KV stores return `KvResult`:
+    
+    ```json
+    {
+      "entries": [
+        {"key": "user:1:name", "value": "Alice"},
+        {"key": "user:2:name", "value": "Bob"}
+      ]
+    }
+    ```
+    
+    Displayed as key-value pairs.
+  </Tab>
+</Tabs>
+
+## Try Other Database Types
+
+Now that you understand the basics, try connecting to other databases:
+
+<CardGroup cols={2}>
+  <Card title="MySQL" icon="database">
+    **Required info**:
+    - Host (e.g., `localhost:3306`)
+    - Database name
+    - Username and password
+    - Optional: TLS/SSL settings
+    
+    **Sample query**:
+    ```sql
+    SHOW TABLES;
+    ```
+  </Card>
+  
+  <Card title="PostgreSQL" icon="elephant">
+    **Required info**:
+    - Host (e.g., `localhost:5432`)
+    - Database name
+    - Username and password
+    - Optional: SSL mode
+    
+    **Sample query**:
+    ```sql
+    SELECT * FROM information_schema.tables
+    WHERE table_schema = 'public';
+    ```
+  </Card>
+  
+  <Card title="Redis" icon="server">
+    **Required info**:
+    - Host and port (e.g., `localhost:6379`)
+    - Password (if configured)
+    - Database number (0-15)
+    
+    **Sample commands**:
+    ```
+    SET mykey "Hello QueryBox"
+    GET mykey
+    KEYS *
+    ```
+  </Card>
+  
+  <Card title="ArangoDB" icon="project-diagram">
+    **Required info**:
+    - URL (e.g., `http://localhost:8529`)
+    - Database name
+    - Username and password
+    
+    **Sample query (AQL)**:
+    ```aql
+    FOR doc IN users
+      RETURN doc
+    ```
+  </Card>
+</CardGroup>
+
+## Advanced Features
+
+### EXPLAIN Queries
+
+For databases that support it (MySQL, PostgreSQL, SQLite), use the **Explain** button to analyze query execution plans:
+
+<Steps>
+  <Step title="Write a Query">
+    ```sql
+    SELECT * FROM users WHERE email LIKE '%example.com';
+    ```
+  </Step>
+  
+  <Step title="Click Explain">
+    Instead of **Execute**, click the **Explain** button.
+    
+    The plugin automatically adds `EXPLAIN` to your query and shows the execution plan.
+  </Step>
+  
+  <Step title="Analyze Results">
+    Review the query plan to identify:
+    - Which indexes are used
+    - Scan types (full table scan vs. index scan)
+    - Estimated row counts
+    - Optimization opportunities
+  </Step>
+</Steps>
+
+<Note>
+  The Explain button only appears for plugins that advertise the `explain-query` capability in their metadata.
+</Note>
+
+### Multiple Connections
+
+QueryBox supports multiple concurrent connections:
+
+1. Create connections to different databases (even different types)
+2. Switch between them using the connection dropdown
+3. Each connection maintains its own tree view and state
+4. Credentials are managed securely and independently
+
+### Plugin Management
+
+View and manage installed plugins:
+
+<Steps>
+  <Step title="Open Plugins Window">
+    From the menu, select **Plugins** or use the keyboard shortcut.
+  </Step>
+  
+  <Step title="View Plugin Information">
+    Each plugin displays:
+    - Name and version
+    - Description and author
+    - Capabilities (connection-tree, test-connection, explain-query)
+    - License and documentation links
+  </Step>
+  
+  <Step title="Rescan Plugins">
+    If you add new plugin executables to `bin/plugins/` or the user plugin directory, click **Rescan** to discover them without restarting.
+  </Step>
+</Steps>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Connection Naming" icon="tag">
+    Use descriptive names that include:
+    - Environment (dev, staging, production)
+    - Database purpose
+    - Server location
+    
+    **Examples**:
+    - "Production MySQL - Users DB"
+    - "Dev PostgreSQL - Local"
+    - "Analytics Redis - Cache"
+  </Accordion>
+  
+  <Accordion title="Credential Security" icon="lock">
+    - QueryBox stores credentials in your OS keyring when available
+    - Never commit the QueryBox data directory to version control
+    - Use read-only credentials for production databases
+    - Test connections before saving to catch authentication issues early
+  </Accordion>
+  
+  <Accordion title="Query Organization" icon="folder-tree">
+    - Save frequently used queries as snippets (feature coming soon)
+    - Use comments to document complex queries
+    - Test queries on development databases first
+    - Use transactions for multi-statement operations
+  </Accordion>
+  
+  <Accordion title="Performance" icon="gauge-high">
+    - Use LIMIT clauses for large result sets
+    - Each query spawns a new plugin process (intentional isolation)
+    - Connection tree queries have 30s timeout
+    - Test connections have 15s timeout for faster feedback
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Connection test fails" icon="plug">
+    **Common causes**:
+    - Incorrect host, port, or credentials
+    - Firewall blocking the connection
+    - Database server not running
+    - SSL/TLS configuration mismatch
+    
+    **Debug steps**:
+    1. Verify credentials in a different client (e.g., `mysql` CLI)
+    2. Check network connectivity: `ping <host>` or `telnet <host> <port>`
+    3. Review error message from the plugin
+    4. Check database server logs
+  </Accordion>
+  
+  <Accordion title="Query timeout" icon="clock">
+    **Symptoms**: "context deadline exceeded" after 30 seconds
+    
+    **Solutions**:
+    - Optimize the query (add WHERE clauses, indexes)
+    - Use LIMIT to reduce result set size
+    - For long-running queries, increase timeout (feature coming soon)
+    - Consider running expensive queries directly on the database server
+  </Accordion>
+  
+  <Accordion title="Connection tree empty" icon="tree">
+    **Possible reasons**:
+    - New/empty database (expected)
+    - Plugin doesn't implement `connection-tree` command
+    - Insufficient permissions to query metadata tables
+    
+    **Solutions**:
+    1. Create some tables and refresh the tree
+    2. Check if the plugin supports connection trees in Plugins window
+    3. Verify database user has metadata query permissions
+  </Accordion>
+  
+  <Accordion title="Plugin not found" icon="puzzle-piece">
+    **Symptoms**: "Plugin not found" when creating connection
+    
+    **Solutions**:
+    1. Open Plugins window and verify plugin is listed
+    2. Click **Rescan** to re-probe plugins
+    3. Check that plugin executable exists in `bin/plugins/`
+    4. Verify file is executable (Linux/macOS: `chmod +x`)
+    5. Rebuild plugins: `task build:plugins`
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Connection Management"
+    icon="plug"
+    href="/features/connections"
+  >
+    Learn advanced connection features and credential management
+  </Card>
+  
+  <Card
+    title="Plugin System"
+    icon="puzzle-piece"
+    href="/plugins/overview"
+  >
+    Understand how plugins work and create your own database drivers
+  </Card>
+  
+  <Card
+    title="Query Workspace"
+    icon="window"
+    href="/features/query-workspace"
+  >
+    Master the query editor and result viewing features
+  </Card>
+  
+  <Card
+    title="Security Model"
+    icon="shield-check"
+    href="/security"
+  >
+    Deep dive into QueryBox's security architecture
+  </Card>
+</CardGroup>

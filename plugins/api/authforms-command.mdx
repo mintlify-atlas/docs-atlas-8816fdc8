@@ -1,0 +1,247 @@
+---
+title: "authforms Command"
+description: "Returns structured authentication form definitions with typed input fields"
+---
+
+## Overview
+
+The `authforms` command returns structured form definitions that the host renders as connection creation UI. Plugins can define multiple authentication methods (e.g., "Basic" and "DSN").
+
+## Command Invocation
+
+```bash
+<plugin-binary> authforms
+```
+
+**Stdin:** None (empty request)
+
+**Stdout:** JSON-encoded `AuthFormsResponse` object
+
+**Timeout:** 30 seconds
+
+**Required:** Yes - plugins without this command fall back to a single DSN text input
+
+## Response Structure
+
+<ResponseField name="forms" type="object" required>
+  Map of form definitions, keyed by form identifier (e.g., `"basic"`, `"dsn"`). Each form contains:
+</ResponseField>
+
+### AuthForm Fields
+
+<ResponseField name="forms[key].key" type="string" required>
+  Machine identifier for the form (e.g., `"basic"`, `"dsn"`)
+</ResponseField>
+
+<ResponseField name="forms[key].name" type="string" required>
+  Human-readable form name displayed in UI tabs (e.g., `"Basic"`, `"DSN"`)
+</ResponseField>
+
+<ResponseField name="forms[key].fields" type="AuthField[]" required>
+  Array of form field definitions
+</ResponseField>
+
+### AuthField Properties
+
+<ParamField name="type" type="enum" required>
+  Field input type:
+  - `TEXT` (1): Single-line text input
+  - `NUMBER` (2): Numeric input
+  - `PASSWORD` (3): Password input (masked)
+  - `CHECKBOX` (4): Boolean checkbox
+  - `SELECT` (5): Dropdown selection
+  - `FILE_PATH` (6): File path selector
+</ParamField>
+
+<ParamField name="name" type="string" required>
+  Machine name used as the key when submitting form values (lowercase, no spaces)
+</ParamField>
+
+<ParamField name="label" type="string" required>
+  Human-readable label displayed next to the field
+</ParamField>
+
+<ParamField name="value" type="string">
+  Default value pre-filled in the field
+</ParamField>
+
+<ParamField name="required" type="boolean">
+  Whether the field must be filled before submission
+</ParamField>
+
+<ParamField name="placeholder" type="string">
+  Placeholder text shown when field is empty
+</ParamField>
+
+<ParamField name="options" type="string[]">
+  Available options for `SELECT` field type
+</ParamField>
+
+## Example Implementation
+
+From `plugins/mysql/main.go`:
+
+```go
+func (m *mysqlPlugin) AuthForms(ctx context.Context, _ *plugin.AuthFormsRequest) (*plugin.AuthFormsResponse, error) {
+    // Provide two options: a `basic` property-based form and a `dsn` fallback.
+    basic := plugin.AuthForm{
+        Key:  "basic",
+        Name: "Basic",
+        Fields: []*plugin.AuthField{
+            {
+                Type:        plugin.AuthFieldText,
+                Name:        "host",
+                Label:       "Host",
+                Required:    true,
+                Placeholder: "127.0.0.1",
+                Value:       "127.0.0.1",
+            },
+            {
+                Type:        plugin.AuthFieldNumber,
+                Name:        "port",
+                Label:       "Port",
+                Placeholder: "3306",
+                Value:       "3306",
+            },
+            {
+                Type:  plugin.AuthFieldText,
+                Name:  "user",
+                Label: "User",
+                Value: "root",
+            },
+            {
+                Type:  plugin.AuthFieldPassword,
+                Name:  "password",
+                Label: "Password",
+            },
+            {
+                Type:  plugin.AuthFieldText,
+                Name:  "database",
+                Label: "Database name",
+            },
+            {
+                Type:    plugin.AuthFieldSelect,
+                Name:    "tls",
+                Label:   "TLS mode (e.g. skip-verify)",
+                Options: []string{"skip-verify", "true", "false", "preferred"},
+                Value:   "skip-verify",
+            },
+            {
+                Type:        plugin.AuthFieldText,
+                Name:        "params",
+                Label:       "Extra params",
+                Placeholder: "charset=utf8&parseTime=true",
+            },
+        },
+    }
+
+    dsn := plugin.AuthForm{
+        Key:  "dsn",
+        Name: "DSN",
+        Fields: []*plugin.AuthField{
+            {
+                Type:        plugin.AuthFieldText,
+                Name:        "dsn",
+                Label:       "DSN",
+                Placeholder: "user:pass@tcp(host:port)/dbname",
+            },
+        },
+    }
+    
+    return &plugin.AuthFormsResponse{
+        Forms: map[string]*plugin.AuthForm{
+            "basic": &basic,
+            "dsn":   &dsn,
+        },
+    }, nil
+}
+```
+
+## Response Format (stdout)
+
+```json
+{
+  "forms": {
+    "basic": {
+      "key": "basic",
+      "name": "Basic",
+      "fields": [
+        {
+          "type": "TEXT",
+          "name": "host",
+          "label": "Host",
+          "value": "127.0.0.1",
+          "required": true,
+          "placeholder": "127.0.0.1"
+        },
+        {
+          "type": "NUMBER",
+          "name": "port",
+          "label": "Port",
+          "value": "3306",
+          "placeholder": "3306"
+        },
+        {
+          "type": "PASSWORD",
+          "name": "password",
+          "label": "Password"
+        },
+        {
+          "type": "SELECT",
+          "name": "tls",
+          "label": "TLS mode",
+          "options": ["skip-verify", "true", "false", "preferred"],
+          "value": "skip-verify"
+        }
+      ]
+    },
+    "dsn": {
+      "key": "dsn",
+      "name": "DSN",
+      "fields": [
+        {
+          "type": "TEXT",
+          "name": "dsn",
+          "label": "DSN",
+          "placeholder": "user:pass@tcp(host:port)/dbname"
+        }
+      ]
+    }
+  }
+}
+```
+
+## Form Submission Flow
+
+1. Host calls `authforms` and renders tabs for each form
+2. User selects a tab and fills in the fields
+3. On submit, host serializes form values as JSON:
+   ```json
+   {
+     "form": "basic",
+     "values": {
+       "host": "127.0.0.1",
+       "port": "3306",
+       "user": "root",
+       "password": "secret",
+       "database": "mydb"
+     }
+   }
+   ```
+4. Host stores this JSON in the connection's `credential_blob` field
+5. When executing queries, the plugin receives this blob in `connection["credential_blob"]`
+
+## Best Practices
+
+- Always provide a fallback DSN form for advanced users
+- Use `PASSWORD` type for sensitive fields to enable masking
+- Set sensible defaults in the `value` field for common parameters
+- Use `SELECT` fields for predefined options (e.g., TLS modes)
+- Mark essential fields as `required: true`
+- Use `FILE_PATH` for certificate or key file selectors
+
+## Error Handling
+
+- If the command fails, write error details to **stderr** and exit with non-zero status code
+- Plugins that fail `authforms` fall back to a single generic credential text input
+- The host does not validate field values - validation should occur during `exec` or `test-connection`

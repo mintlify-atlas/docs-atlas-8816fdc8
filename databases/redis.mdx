@@ -1,0 +1,279 @@
+---
+title: Redis
+description: Connect to Redis key-value stores with QueryBox
+---
+
+QueryBox supports Redis through a native driver plugin. Execute Redis commands and browse keys across all logical databases.
+
+## Connection Methods
+
+<Tabs>
+  <Tab title="Basic">
+    Configure your Redis connection using individual parameters:
+
+    <ParamField path="host" type="string" required>
+      Redis server hostname or IP address
+      
+      Default: `127.0.0.1`
+    </ParamField>
+
+    <ParamField path="port" type="number">
+      Redis server port
+      
+      Default: `6379`
+    </ParamField>
+
+    <ParamField path="password" type="string">
+      Redis authentication password
+    </ParamField>
+
+    <ParamField path="db" type="number">
+      Database index (0-15)
+      
+      Default: `0`
+    </ParamField>
+
+    <ParamField path="tls" type="string">
+      Enable TLS/SSL encryption
+      
+      Options: `false`, `true`
+      
+      Default: `false`
+    </ParamField>
+  </Tab>
+
+  <Tab title="URL">
+    Provide a complete Redis connection URL:
+
+    <ParamField path="url" type="string" required>
+      Full Redis connection URL
+      
+      Format: `redis://:password@host:port/db`
+    </ParamField>
+
+    ### Example URL
+    ```
+    redis://:mypassword@localhost:6379/0
+    ```
+
+    ### Secure Connection
+    ```
+    rediss://:password@redis.example.com:6380/0
+    ```
+  </Tab>
+</Tabs>
+
+## Connection String Examples
+
+### Local Development
+```
+redis://localhost:6379/0
+```
+
+### With Password
+```
+redis://:secretpassword@localhost:6379/0
+```
+
+### Remote Server with TLS
+```
+rediss://:password@redis.example.com:6380/0
+```
+
+### Specific Database Index
+```
+redis://localhost:6379/5
+```
+
+## Supported Redis Commands
+
+QueryBox supports all standard Redis commands:
+
+### String Operations
+```redis
+SET key "value"
+GET key
+INCR counter
+DECR counter
+APPEND key " more data"
+STRLEN key
+```
+
+### Hash Operations
+```redis
+HSET user:1 name "Alice" age 30
+HGET user:1 name
+HGETALL user:1
+HMGET user:1 name age
+HDEL user:1 age
+```
+
+### List Operations
+```redis
+LPUSH mylist "first"
+RPUSH mylist "last"
+LRANGE mylist 0 -1
+LPOP mylist
+RPOP mylist
+LLEN mylist
+```
+
+### Set Operations
+```redis
+SADD myset "value1" "value2"
+SMEMBERS myset
+SISMEMBER myset "value1"
+SREM myset "value1"
+SCARD myset
+```
+
+### Sorted Set Operations
+```redis
+ZADD leaderboard 100 "player1" 200 "player2"
+ZRANGE leaderboard 0 -1 WITHSCORES
+ZREVRANGE leaderboard 0 10
+ZSCORE leaderboard "player1"
+```
+
+### Key Management
+```redis
+KEYS pattern*
+EXISTS key
+DEL key1 key2
+EXPIRE key 3600
+TTL key
+TYPE key
+```
+
+### Database Operations
+```redis
+SELECT 1
+DBSIZE
+FLUSHDB
+FLUSHALL
+INFO
+PING
+```
+
+## Supported Features
+
+<CardGroup cols={2}>
+  <Card title="All Commands" icon="terminal">
+    Execute any Redis command
+  </Card>
+  
+  <Card title="Database Browser" icon="folder-tree">
+    Browse all 16 logical databases
+  </Card>
+  
+  <Card title="Key Preview" icon="key">
+    View first 50 keys per database
+  </Card>
+  
+  <Card title="Type Detection" icon="tags">
+    Automatic key type identification
+  </Card>
+</CardGroup>
+
+## Capabilities
+
+- **Command Execution**: Run any Redis command
+- **Multi-Database Support**: Access all 16 logical databases (db0-db15)
+- **Key Scanning**: Preview up to 50 keys per database
+- **Type-Aware Queries**: Automatic command selection based on key type
+- **TLS Support**: Secure connections with embedded root certificates
+- **Connection Tree**: Visual navigation of databases and keys
+
+## Database Structure
+
+Redis organizes data in 16 logical databases:
+
+- **db0** through **db15**: Separate key namespaces
+- Each database shows key count and preview
+- Keys display with their type (string, hash, list, set, zset)
+
+## Result Formats
+
+Redis commands return different result types:
+
+### Key-Value Results
+- Scalar commands (GET, SET, INCR)
+- Hash commands (HGETALL, HMGET)
+- Single values displayed as `{"result": "value"}`
+
+### Table Results
+- List commands (LRANGE)
+- Set commands (SMEMBERS)
+- Array results displayed in single "value" column
+
+## Special Commands
+
+### SELECT Command
+
+The `SELECT` command switches database context:
+
+```redis
+SELECT 5
+```
+
+QueryBox handles this specially by:
+1. Creating a new connection scoped to the target database
+2. Returning the database name and key count
+
+<Info>
+  SELECT is connection-specific and handled differently than other commands due to connection pooling.
+</Info>
+
+## Key Type Commands
+
+When you select a key from the connection tree, QueryBox automatically chooses the appropriate command:
+
+- **string**: `GET key`
+- **hash**: `HGETALL key`
+- **list**: `LRANGE key 0 -1`
+- **set**: `SMEMBERS key`
+- **zset**: `ZRANGE key 0 -1 WITHSCORES`
+
+## Notes
+
+<Tip>
+  Redis commands are case-insensitive. You can use `get`, `GET`, or `Get` interchangeably.
+</Tip>
+
+<Warning>
+  `FLUSHDB` and `FLUSHALL` permanently delete keys and cannot be undone. Use with caution.
+</Warning>
+
+<Info>
+  Quoted strings preserve spaces: `SET key "hello world"` stores the entire phrase.
+</Info>
+
+## Advanced Usage
+
+### Pattern Matching
+```redis
+KEYS user:*
+SCAN 0 MATCH session:* COUNT 100
+```
+
+### Transactions
+```redis
+MULTI
+SET key1 "value1"
+SET key2 "value2"
+EXEC
+```
+
+### Pub/Sub
+```redis
+PUBLISH channel "message"
+SUBSCRIBE channel
+```
+
+## Plugin Information
+
+- **Version**: 0.1.0
+- **License**: BSD-3-Clause
+- **Author**: Redis Ltd.
+- **Tags**: nosql, cache
+- **Driver**: github.com/redis/go-redis/v9

@@ -1,0 +1,163 @@
+---
+title: Plugin System Overview
+description: Learn how QueryBox's plugin architecture enables extensible database drivers
+---
+
+QueryBox uses a language-agnostic plugin system that allows you to create custom database drivers and data source connectors. Plugins are single-shot executables that communicate with the host application via JSON-encoded protobuf messages over stdin/stdout.
+
+## Architecture
+
+Plugins follow a simple subprocess-based model:
+
+1. **Host spawns plugin** - One subprocess per request
+2. **Request via stdin** - JSON request sent to plugin
+3. **Response via stdout** - Proto-JSON response returned
+4. **Plugin exits** - No persistent processes
+
+This design is intentionally language-agnostic—any executable that implements the contract can function as a plugin.
+
+<Note>
+Plugins are single-shot executables under `bin/plugins/`. There are no persistent processes or background services.
+</Note>
+
+## Plugin Contract
+
+Plugins communicate using the protobuf contract defined in `contracts/plugin/v1/plugin.proto`. At runtime, messages are serialized as JSON using `protojson`.
+
+**Key components:**
+- **Host service**: `services/pluginmgr/pluginmgr.go`
+- **Plugin SDK**: `pkg/plugin` (Go helper + protobuf aliases)
+- **Proto contract**: `contracts/plugin/v1/plugin.proto` → `rpc/contracts/plugin/v1`
+
+## CLI Commands
+
+Every plugin must implement these commands:
+
+| Command | Stdin | Stdout | Timeout | Required |
+|---------|-------|--------|---------|----------|
+| `info` | — | Plugin metadata | 2s | ✓ |
+| `exec` | Query request | Query result | 30s | ✓ |
+| `authforms` | — | Auth form definitions | 30s | ✓ |
+| `connection-tree` | Connection | Tree nodes | 30s | Optional |
+| `test-connection` | Connection | Success/failure | 15s | Optional |
+
+### Info Command
+
+Returns plugin metadata:
+
+```json
+{
+  "name": "mysql",
+  "version": "1.0.0",
+  "description": "MySQL / MariaDB driver",
+  "type": "DRIVER",
+  "url": "https://...",
+  "author": "...",
+  "license": "MIT",
+  "icon_url": "...",
+  "capabilities": ["explain-query"],
+  "tags": ["sql", "relational"],
+  "contact": "...",
+  "metadata": {},
+  "settings": {}
+}
+```
+
+<Tip>
+The host ignores unknown fields, so plugins can include custom metadata for forward compatibility.
+</Tip>
+
+### Exec Command
+
+Executes queries and returns results. The `result` field contains exactly one of:
+
+| Field | Type | Use |
+|-------|------|-----|
+| `sql` | `SqlResult{columns, rows}` | Tabular query results |
+| `document` | `DocumentResult{documents}` | JSON document store results |
+| `kv` | `KvResult{entries}` | Key-value results (also wraps raw text) |
+
+### Auth Forms Command
+
+Defines authentication forms that the host renders as tabs. Users fill out forms, and values are serialized as JSON when creating connections.
+
+Plugins that don't implement `authforms` fall back to a single DSN/credential text input.
+
+### Connection Tree Command
+
+Returns a hierarchical browse structure (e.g., databases → schemas → tables → columns):
+
+```json
+{
+  "nodes": [
+    {
+      "id": "db:mydb",
+      "label": "mydb",
+      "type": "database",
+      "children": [...],
+      "actions": [
+        { "label": "Show Tables", "query": "SHOW TABLES" }
+      ]
+    }
+  ]
+}
+```
+
+When users activate node actions, the frontend calls `ExecTreeAction`, which delegates to `ExecPlugin`.
+
+### Test Connection Command
+
+Verifies credentials can reach the data store. This is a fire-and-forget call—plugins must not persist state.
+
+## Capabilities
+
+### Explain-Query Capability
+
+If a plugin advertises `"explain-query"` in its `capabilities` array:
+
+1. Host renders an **Explain** button in the result workspace
+2. Clicking reruns the query with `options: {"explain-query": "yes"}`
+3. Plugin interprets the flag (e.g., prepending `EXPLAIN`)
+4. Host renders results in a separate **Explain** tab
+
+## Plugin Discovery
+
+QueryBox looks for plugins in two locations:
+
+### User Directory (Primary)
+
+OS-specific config directory:
+- **Linux**: `$XDG_CONFIG_HOME/querybox/plugins`
+- **Windows**: `%APPDATA%\querybox\plugins`
+- **macOS**: `~/Library/Application Support/querybox/plugins`
+
+On startup, QueryBox copies bundled plugins from `bin/plugins` to the user directory, keeping them in sync while allowing custom drivers.
+
+### Bundle Directory (Fallback)
+
+Traditional `bin/plugins` directory next to the executable (inside `.app` bundles, installers, or `wails3 dev` working directory).
+
+<Warning>
+PluginManager scans directories **once at startup**. Adding, removing, or replacing plugins requires restarting the application or clicking **Rescan** in the Plugins window.
+</Warning>
+
+## Reference Plugins
+
+| Plugin | Commands | Capabilities | Notes |
+|--------|----------|-------------|-------|
+| `mysql` | exec, authforms, connection-tree, test-connection | explain-query | TLS support |
+| `postgresql` | exec, authforms, connection-tree, test-connection | explain-query | Full SQL support |
+| `sqlite` | exec, authforms, connection-tree, test-connection | explain-query | Two auth forms: local file + Turso Cloud |
+| `redis` | exec, authforms | — | Two auth forms: basic + URL string |
+| `arangodb` | exec, authforms | — | Multi-model (documents, graphs) |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/plugins/quickstart">
+    Create your first plugin in minutes
+  </Card>
+  <Card title="Plugin Contract" icon="file-contract" href="/plugins/plugin-contract">
+    Deep dive into the protobuf specification
+  </Card>
+</CardGroup>

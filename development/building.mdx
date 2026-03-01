@@ -1,0 +1,280 @@
+---
+title: Building QueryBox
+description: Learn how to build the QueryBox application and plugins
+---
+
+This guide covers building QueryBox for development and production.
+
+## Development Mode
+
+The fastest way to develop QueryBox is using the built-in hot-reload mode:
+
+```bash
+wails3 dev
+```
+
+This starts the application with:
+- **Frontend hot-reload** - Changes to Vue components reflect immediately
+- **Backend hot-reload** - Go changes trigger an automatic rebuild
+- **Debug mode** - Additional logging and development tools enabled
+
+The development server runs on a configurable port (default: 9245).
+
+### Custom Port
+
+To use a different port:
+
+```bash
+# Using Task
+task dev VITE_PORT=3000
+
+# Or directly
+wails3 dev -config ./build/config.yml -port 3000
+```
+
+## Building Plugins
+
+Plugins must be built before running the application:
+
+```bash
+task build:plugins
+```
+
+This script:
+1. Creates the `bin/plugins/` directory if it doesn't exist
+2. Builds all executables in the `plugins/` directory
+3. Outputs binaries to `bin/plugins/`
+
+### Cross-Platform Plugin Builds
+
+Build plugins for different platforms using Go's cross-compilation:
+
+```bash
+# Build for Windows
+GOOS=windows GOARCH=amd64 task build:plugins
+
+# Build for Linux
+GOOS=linux GOARCH=amd64 task build:plugins
+
+# Build for macOS (Intel)
+GOOS=darwin GOARCH=amd64 task build:plugins
+
+# Build for macOS (Apple Silicon)
+GOOS=darwin GOARCH=arm64 task build:plugins
+```
+
+Windows builds automatically get the `.exe` suffix.
+
+### Plugin Discovery
+
+At startup, the application:
+1. Copies plugins from `bin/plugins/` to the user config directory
+2. Scans both locations for available plugins
+3. User directory plugins take precedence over bundled ones
+
+Plugins are discovered automatically within 2 seconds of being added to either directory.
+
+## Production Builds
+
+Build a production-ready executable:
+
+```bash
+wails3 build
+```
+
+The production binary is placed in `bin/` and includes:
+- Optimized frontend bundle
+- Compiled Go backend
+- Embedded assets
+- Platform-specific packaging
+
+### Platform-Specific Builds
+
+Build for your current platform:
+
+```bash
+task build
+```
+
+Or target a specific platform:
+
+```bash
+# Build for the current OS
+task build
+
+# The task automatically delegates to the correct platform:
+# - task windows:build (Windows)
+# - task darwin:build (macOS)
+# - task linux:build (Linux)
+```
+
+### Package for Distribution
+
+Create a distributable package:
+
+```bash
+task package
+```
+
+This:
+1. Builds all plugins
+2. Builds the main application
+3. Creates a platform-specific package:
+   - Windows: `.exe` installer
+   - macOS: `.app` bundle and `.dmg`
+   - Linux: `.AppImage` or `.deb`
+
+Packages are output to the `build/bin/` directory.
+
+## Server Mode
+
+QueryBox can run as a headless HTTP server without the GUI:
+
+### Build Server Mode
+
+```bash
+task build:server
+```
+
+### Run Server Mode
+
+```bash
+task run:server
+```
+
+### Docker Server Mode
+
+Build and run QueryBox in a Docker container:
+
+```bash
+# Build Docker image
+task build:docker
+
+# Run Docker container
+task run:docker
+```
+
+The server mode is useful for:
+- Remote database management
+- CI/CD integrations
+- Headless environments
+- API-only deployments
+
+## Creating a New Plugin
+
+To create a new database plugin:
+
+### 1. Copy the Template
+
+```bash
+cp -r plugins/template plugins/your-plugin-name
+```
+
+### 2. Implement the Plugin Interface
+
+Edit `plugins/your-plugin-name/main.go` and implement the four required commands:
+
+- **`info`** - Return plugin metadata (name, version, type)
+  ```go
+  // Return JSON with name, version, and database type
+  ```
+
+- **`authforms`** - Return auth form definitions for the UI
+  ```go
+  // Define form fields for connection credentials
+  ```
+
+- **`exec`** - Execute a query and return results
+  ```go
+  // Parse query, execute against database, return results
+  ```
+
+- **`connection-tree`** - Return a browsable object hierarchy
+  ```go
+  // Return databases, tables, columns, etc.
+  ```
+
+### 3. Build the Plugin
+
+```bash
+task build:plugins
+```
+
+### 4. Test the Plugin
+
+The running app will discover the new plugin automatically (no restart needed if already running).
+
+For detailed plugin development, see the [Plugin System documentation](/concepts/plugin-system).
+
+## Protobuf Code Generation
+
+If you modify `.proto` files, regenerate the Go code:
+
+```bash
+task proto:generate
+```
+
+This requires:
+- `protoc` (Protocol Buffer compiler)
+- `protoc-gen-go` (Go code generator)
+- `protoc-gen-go-grpc` (Go gRPC code generator)
+
+Generated files are placed in `rpc/contracts/plugin/v1/`.
+
+## Build Scripts
+
+QueryBox uses [Task](https://taskfile.dev) for build automation. Available tasks:
+
+| Task | Description |
+|------|-------------|
+| `task dev` | Run in development mode with hot-reload |
+| `task build` | Build for current platform |
+| `task package` | Create distributable package |
+| `task build:plugins` | Build all plugins |
+| `task build:server` | Build in server mode (no GUI) |
+| `task run:server` | Run server mode |
+| `task build:docker` | Build Docker image |
+| `task run:docker` | Run Docker container |
+| `task proto:generate` | Generate code from `.proto` files |
+| `task setup:docker` | Setup Docker for cross-compilation |
+
+View all available tasks:
+
+```bash
+task --list
+```
+
+## Troubleshooting
+
+### Plugin Not Discovered
+
+1. Verify binary is in `bin/plugins/` or user config directory
+2. Ensure binary is executable: `chmod +x bin/plugins/your-plugin`
+3. Check the Plugins window for errors in `PluginInfo.LastError`
+4. Use the **Rescan** button in the Plugins window to re-probe
+
+### Build Fails on Windows
+
+Ensure you have a C compiler installed:
+- [MinGW-w64](https://www.mingw-w64.org/)
+- [TDM-GCC](https://jmeubank.github.io/tdm-gcc/)
+
+### Frontend Build Errors
+
+Clear the build cache:
+
+```bash
+rm -rf frontend/node_modules frontend/dist
+wails3 dev
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Learn how to run and write tests
+  </Card>
+  <Card title="Plugin System" icon="plug" href="/concepts/plugin-system">
+    Deep dive into plugin architecture
+  </Card>
+</CardGroup>

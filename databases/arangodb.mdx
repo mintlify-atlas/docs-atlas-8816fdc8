@@ -1,0 +1,320 @@
+---
+title: ArangoDB
+description: Connect to ArangoDB multi-model databases with QueryBox
+---
+
+QueryBox supports ArangoDB through a native driver plugin. Execute AQL queries and manage databases, collections, documents, and graphs.
+
+## Connection Configuration
+
+<Tabs>
+  <Tab title="Basic">
+    Configure your ArangoDB connection using individual parameters:
+
+    <ParamField path="host" type="string" required>
+      ArangoDB server hostname or IP address
+      
+      Default: `127.0.0.1`
+    </ParamField>
+
+    <ParamField path="port" type="number">
+      ArangoDB server port
+      
+      Default: `8529`
+    </ParamField>
+
+    <ParamField path="user" type="string">
+      Database username
+      
+      Default: `root`
+    </ParamField>
+
+    <ParamField path="password" type="string">
+      Database password
+    </ParamField>
+
+    <ParamField path="database" type="string">
+      Database name to connect to
+      
+      Default: `_system`
+    </ParamField>
+
+    <ParamField path="tls" type="string">
+      Enable TLS/SSL encryption
+      
+      Options: `false`, `true`
+      
+      Default: `false`
+    </ParamField>
+  </Tab>
+</Tabs>
+
+## Connection Examples
+
+### Local Development
+```
+http://127.0.0.1:8529
+User: root
+Database: _system
+```
+
+### Remote Server with TLS
+```
+https://arangodb.example.com:8529
+User: app_user
+Password: secret
+Database: production
+TLS: true
+```
+
+### Custom Database
+```
+http://localhost:8529
+User: developer
+Database: myapp
+```
+
+## AQL Query Language
+
+ArangoDB uses AQL (ArangoDB Query Language) for querying:
+
+### Basic Queries
+
+```aql
+// Return all documents
+FOR doc IN users
+  RETURN doc
+
+// Filter documents
+FOR doc IN users
+  FILTER doc.age > 25
+  RETURN doc
+
+// Limit results
+FOR doc IN users
+  LIMIT 100
+  RETURN doc
+
+// Sort results
+FOR doc IN users
+  SORT doc.name ASC
+  RETURN doc
+```
+
+### Insert Documents
+
+```aql
+INSERT {
+  name: "Alice",
+  age: 30,
+  email: "alice@example.com"
+} INTO users
+```
+
+### Update Documents
+
+```aql
+FOR doc IN users
+  FILTER doc.name == "Alice"
+  UPDATE doc WITH { age: 31 } IN users
+```
+
+### Remove Documents
+
+```aql
+FOR doc IN users
+  FILTER doc.age < 18
+  REMOVE doc IN users
+```
+
+### Joins and Relations
+
+```aql
+FOR user IN users
+  FOR order IN orders
+    FILTER order.userId == user._key
+    RETURN {
+      user: user.name,
+      order: order.total
+    }
+```
+
+### Aggregation
+
+```aql
+FOR doc IN users
+  COLLECT status = doc.status WITH COUNT INTO total
+  RETURN {
+    status: status,
+    count: total
+  }
+```
+
+### Graph Traversal
+
+```aql
+FOR v, e, p IN 1..3 OUTBOUND "users/alice" friendships
+  RETURN {
+    friend: v.name,
+    distance: LENGTH(p.vertices)
+  }
+```
+
+## DDL Meta-Commands
+
+QueryBox extends AQL with DDL commands for database and collection management:
+
+### Database Operations
+
+```sql
+-- Create database
+CREATE DATABASE mydb;
+
+-- Drop database
+DROP DATABASE mydb;
+```
+
+### Collection Operations
+
+```sql
+-- Create collection
+CREATE COLLECTION mycollection;
+
+-- Create collection in specific database
+CREATE COLLECTION mydb.mycollection;
+
+-- Drop collection
+DROP COLLECTION mycollection;
+
+-- Drop collection from specific database
+DROP COLLECTION mydb.mycollection;
+```
+
+<Info>
+  These DDL commands are QueryBox extensions and are intercepted before being sent to ArangoDB.
+</Info>
+
+## Qualified Collection Names
+
+QueryBox supports database-qualified collection names in AQL queries:
+
+```aql
+-- Query collection in different database
+FOR doc IN mydb.users
+  LIMIT 10
+  RETURN doc
+```
+
+The plugin automatically:
+1. Detects the database prefix (`mydb`)
+2. Switches to that database
+3. Rewrites the query to use the unqualified name (`users`)
+
+## Supported Features
+
+<CardGroup cols={2}>
+  <Card title="AQL Queries" icon="code">
+    Full AQL query language support
+  </Card>
+  
+  <Card title="Multi-Model" icon="shapes">
+    Documents, graphs, and key-value
+  </Card>
+  
+  <Card title="Database Browser" icon="folder-tree">
+    Browse databases and collections
+  </Card>
+  
+  <Card title="DDL Operations" icon="wrench">
+    Create and drop databases/collections
+  </Card>
+</CardGroup>
+
+## Capabilities
+
+- **AQL Execution**: Full support for ArangoDB Query Language
+- **CRUD Operations**: Insert, update, remove documents
+- **Graph Queries**: Traverse and analyze graph data
+- **Aggregation**: Group, count, and summarize data
+- **Join Operations**: Combine data from multiple collections
+- **DDL Commands**: Create and drop databases and collections
+- **Database Browser**: Navigate databases and collections hierarchically
+- **Document Results**: View results as structured documents
+- **TLS Support**: Secure connections with embedded root certificates
+
+## Result Formats
+
+AQL queries return different value types:
+
+### Document Results
+- Objects returned directly as documents
+- Scalars and arrays wrapped as `{"value": <v>}`
+- Ensures consistent document-shaped payloads
+
+### DDL Results
+- Key-value results showing operation status
+- Example: `{"result": "Collection created"}`
+
+## Database Structure
+
+The ArangoDB plugin displays:
+
+1. **Server** (connection root)
+2. **Databases** (all accessible databases or single specified database)
+3. **Collections** (excludes system collections starting with `_`)
+4. **Actions**: Quick query and drop operations
+
+<Info>
+  System collections (prefixed with `_`) are hidden from the connection tree.
+</Info>
+
+## Notes
+
+<Tip>
+  Use qualified collection names (`db.collection`) to query across databases without changing your connection.
+</Tip>
+
+<Warning>
+  DROP DATABASE and DROP COLLECTION operations are permanent and cannot be undone.
+</Warning>
+
+<Info>
+  ArangoDB supports multiple data models (document, graph, key-value) in a single database engine.
+</Info>
+
+## Advanced Features
+
+### Geospatial Queries
+```aql
+FOR loc IN locations
+  FILTER DISTANCE(loc.lat, loc.lng, 40.7128, -74.0060) <= 1000
+  RETURN loc
+```
+
+### Full-Text Search
+```aql
+FOR doc IN FULLTEXT(articles, "content", "query,string")
+  RETURN doc
+```
+
+### Subqueries
+```aql
+FOR user IN users
+  LET orderCount = (
+    FOR order IN orders
+      FILTER order.userId == user._key
+      RETURN 1
+  )
+  RETURN {
+    user: user.name,
+    orders: LENGTH(orderCount)
+  }
+```
+
+## Plugin Information
+
+- **Version**: 0.1.0
+- **License**: Apache-2.0
+- **Author**: ArangoDB GmbH
+- **Tags**: nosql, multi-model
+- **Driver**: github.com/arangodb/go-driver

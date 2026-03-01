@@ -1,0 +1,142 @@
+---
+title: Creating Database Connections
+description: Learn how to create and manage database connections in QueryBox
+---
+
+# Creating Database Connections
+
+QueryBox uses a connection-based workflow to interact with your databases. Each connection stores metadata locally and credentials securely in your operating system's keyring.
+
+## Adding a New Connection
+
+<Steps>
+  <Step title="Open the Connections Window">
+    Click the **+** button in the Connections panel sidebar, or navigate to the Connections window from the menu bar.
+    
+    The Connections window displays all your saved connections and allows you to create new ones.
+  </Step>
+
+  <Step title="Select Your Database Type">
+    QueryBox supports multiple database types through its plugin system:
+    
+    - **PostgreSQL** - Relational database with advanced features
+    - **MySQL / MariaDB** - Popular open-source relational database
+    - **SQLite** - Lightweight file-based database (local files or Turso Cloud)
+    - **Redis** - In-memory key-value store
+    - **ArangoDB** - Multi-model database (documents, graphs, key-value)
+    
+    Each database type may offer multiple authentication methods (tabs) depending on the plugin's capabilities.
+  </Step>
+
+  <Step title="Fill in Connection Details">
+    The connection form adapts based on your database type. Common fields include:
+    
+    <Tabs>
+      <Tab title="PostgreSQL / MySQL">
+        - **Host** - Database server address (e.g., `localhost` or `db.example.com`)
+        - **Port** - Server port (default: 5432 for PostgreSQL, 3306 for MySQL)
+        - **Username** - Database user account
+        - **Password** - User password (securely stored in OS keyring)
+        - **Database** - Default database name
+        - **SSL/TLS Options** - Connection encryption settings
+      </Tab>
+      
+      <Tab title="SQLite">
+        **Local File**:
+        - **File Path** - Path to your `.db` or `.sqlite` file
+        - Use the **Browse** button to select a file from your system
+        
+        **Turso Cloud**:
+        - **Database URL** - Your Turso database URL
+        - **Auth Token** - Turso authentication token
+      </Tab>
+      
+      <Tab title="Redis">
+        **Basic Connection**:
+        - **Host** - Redis server address
+        - **Port** - Server port (default: 6379)
+        - **Password** - Server password (if required)
+        - **Database** - Database number (0-15)
+        
+        **URL String**:
+        - **Connection URL** - Complete Redis URL (e.g., `redis://user:pass@host:port/db`)
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Test Your Connection">
+    If the plugin supports it, click **Test Connection** to verify your credentials before saving.
+    
+    QueryBox will attempt to connect and display a success message or error details.
+  </Step>
+
+  <Step title="Save the Connection">
+    Give your connection a memorable name and click **Save**.
+    
+    - The connection name appears in the Connections panel sidebar
+    - Connection metadata is stored in `connections.db`
+    - Credentials are stored securely in your OS keyring (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux)
+  </Step>
+</Steps>
+
+## Managing Existing Connections
+
+### Connecting to a Database
+
+Click a connection name in the sidebar to load its database tree structure. QueryBox will:
+
+1. Retrieve credentials from the secure keyring
+2. Execute the `connection-tree` plugin command
+3. Display databases, tables, schemas, and other objects in the tree view
+
+A green indicator dot appears on active connections.
+
+### Reconnecting
+
+If a connection tree is already loaded, hover over the connection name to reveal the **Connect** button. Click it to refresh the tree structure.
+
+### Deleting a Connection
+
+<Steps>
+  <Step title="Locate the Connection">
+    Find the connection in the Connections panel sidebar.
+  </Step>
+
+  <Step title="Open the Delete Menu">
+    Hover over the connection name and click the **Delete** icon (trash can).
+  </Step>
+
+  <Step title="Confirm Deletion">
+    A confirmation dialog appears: "Remove \"connection-name\"? This cannot be undone."
+    
+    Click **Remove** to permanently delete the connection.
+    
+    <Warning>
+      This action removes both the connection metadata and credentials from your system. You'll need to re-enter all details to recreate the connection.
+    </Warning>
+  </Step>
+</Steps>
+
+## Connection Storage
+
+QueryBox stores connection data in two locations:
+
+| Data Type | Storage Location | Platform-Specific Path |
+|-----------|------------------|------------------------|
+| **Metadata** (name, driver type, timestamps) | SQLite database | `~/Library/Application Support/querybox/connections.db` (macOS)<br/>`%APPDATA%\querybox\connections.db` (Windows)<br/>`~/.config/querybox/connections.db` (Linux) |
+| **Credentials** (passwords, tokens) | OS keyring | macOS Keychain<br/>Windows Credential Manager<br/>Linux Secret Service |
+
+<Note>
+  If the OS keyring is unavailable (e.g., on headless servers), QueryBox falls back to a local SQLite credentials store, then to ephemeral in-memory storage.
+</Note>
+
+## Searching Connections
+
+Use the search bar at the top of the Connections panel to filter connections by name. Only matching connections remain visible in the tree.
+
+## Tips
+
+- **Connection Names**: Use descriptive names that identify the environment (e.g., "Production DB", "Local Dev MySQL")
+- **Multiple Connections**: You can create multiple connections to the same database server with different credentials or default databases
+- **File Paths**: For SQLite, relative paths are resolved from your current working directory; absolute paths are recommended
+- **Port Numbers**: If using non-standard ports, double-check the value before saving

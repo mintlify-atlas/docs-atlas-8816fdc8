@@ -1,0 +1,500 @@
+---
+title: Building and Distribution
+description: Build process and distribution strategies for QueryBox plugins
+---
+
+## Overview
+
+QueryBox plugins are standalone executables that communicate with the host application via stdin/stdout. Plugins can be written in any language, but the SDK and examples are written in Go.
+
+This guide covers building plugins with Task, cross-compilation, and distribution strategies.
+
+## Build Process
+
+### Using Task (Recommended)
+
+The project uses [Task](https://taskfile.dev) as a build tool. To build all plugins:
+
+```bash
+task build:plugins
+```
+
+From `Taskfile.yml:64-69`:
+
+```yaml
+build:plugins:
+  summary: Builds all executables in `plugins/` and places them in `bin/plugins`
+  cmds:
+    - mkdir -p {{.BIN_DIR}}/plugins
+    - bash ./scripts/build-plugins.sh
+```
+
+### Build Script
+
+The build script (`scripts/build-plugins.sh`) automatically:
+
+1. Discovers all plugin directories under `plugins/`
+2. Skips the `template` plugin (example only)
+3. Builds each plugin with `main.go`
+4. Outputs binaries to `bin/plugins/`
+5. Adds `.exe` extension on Windows
+6. Makes binaries executable
+
+From `scripts/build-plugins.sh:1-74`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")../" && pwd)"
+PLUGINS_DIR="$ROOT_DIR/plugins"
+OUT_DIR="$ROOT_DIR/bin/plugins"
+
+mkdir -p "$OUT_DIR"
+
+echo "Building plugins from $PLUGINS_DIR -> $OUT_DIR"
+echo "Target GOOS=${GOOS:-$(go env GOOS)} GOARCH=${GOARCH:-$(go env GOARCH)}"
+
+for d in "$PLUGINS_DIR"/*; do
+  [ -d "$d" ] || continue
+  name="$(basename "$d")"
+
+  # Skip template plugin
+  if [ "$name" = "template" ]; then
+    echo "- Skipping template plugin (example)"
+    continue
+  fi
+
+  # Build only if plugin contains a main.go file
+  if [ -f "./plugins/$name/main.go" ]; then
+    build_target="./plugins/$name/main.go"
+  else
+    echo "- Skipping $name (no main.go)"
+    continue
+  fi
+
+  # Determine output path with .exe on Windows
+  out_path="$OUT_DIR/$name"
+  goos=${GOOS:-$(go env GOOS)}
+
+  # Handle Windows extension
+  if [ "$goos" = "windows" ] && [[ "$out_path" != *.exe ]]; then
+    out_path="${out_path}.exe"
+  fi
+
+  echo "- Building $name -> $out_path"
+  if go build -o "$out_path" "${build_target}"; then
+    chmod +x "$out_path" || true
+  else
+    echo "  Failed to build $name" >&2
+  fi
+done
+```
+
+## Cross-Compilation
+
+### Building for Different Platforms
+
+Go supports cross-compilation via `GOOS` and `GOARCH` environment variables:
+
+```bash
+# Build for Linux (amd64)
+GOOS=linux GOARCH=amd64 task build:plugins
+
+# Build for macOS (arm64)
+GOOS=darwin GOARCH=arm64 task build:plugins
+
+# Build for Windows (amd64)
+GOOS=windows GOARCH=amd64 task build:plugins
+```
+
+### Supported Platforms
+
+| Platform | GOOS | GOARCH | Notes |
+|----------|------|--------|-------|
+| Linux x64 | `linux` | `amd64` | Most servers |
+| Linux ARM64 | `linux` | `arm64` | Raspberry Pi, AWS Graviton |
+| macOS Intel | `darwin` | `amd64` | Pre-2020 Macs |
+| macOS Apple Silicon | `darwin` | `arm64` | M1/M2/M3 Macs |
+| Windows x64 | `windows` | `amd64` | Most Windows systems |
+
+### Docker Cross-Compilation
+
+For complex builds or when cross-compiling with CGO:
+
+```bash
+task setup:docker
+```
+
+This builds a Docker image for cross-compilation (approximately 800MB download).
+
+## Plugin Structure
+
+A minimal plugin requires:
+
+```
+plugins/
+└── myplugin/
+    ├── main.go          # Entry point
+    └── go.mod           # Dependencies (optional if using workspace)
+```
+
+### Minimal Example
+
+From `plugins/template/main.go:1-104`:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+
+    "github.com/felixdotgo/querybox/pkg/plugin"
+    pluginpb "github.com/felixdotgo/querybox/rpc/contracts/plugin/v1"
+)
+
+type templatePlugin struct {
+    pluginpb.UnimplementedPluginServiceServer
+}
+
+func (t *templatePlugin) Info(ctx context.Context, _ *pluginpb.PluginV1_InfoRequest) (*plugin.InfoResponse, error) {
+    return &plugin.InfoResponse{
+        Type:        plugin.TypeDriver,
+        Name:        "template",
+        Version:     "0.1.0",
+        Description: "Template plugin",
+        Author:      "Querybox Core Team",
+    }, nil
+}
+
+func (t *templatePlugin) Exec(ctx context.Context, req *plugin.ExecRequest) (*plugin.ExecResponse, error) {
+    data := map[string]string{"query": req.Query}
+    return &plugin.ExecResponse{
+        Result: &plugin.ExecResult{
+            Payload: &pluginpb.PluginV1_ExecResult_Kv{
+                Kv: &plugin.KeyValueResult{Data: data},
+            },
+        },
+    }, nil
+}
+
+func (t *templatePlugin) AuthForms(ctx context.Context, _ *plugin.AuthFormsRequest) (*plugin.AuthFormsResponse, error) {
+    basic := plugin.AuthForm{
+        Key:  "basic",
+        Name: "Basic",
+        Fields: []*plugin.AuthField{
+            {Type: plugin.AuthFieldText, Name: "host", Label: "Host", Required: true},
+        },
+    }
+    return &plugin.AuthFormsResponse{Forms: map[string]*plugin.AuthForm{"basic": &basic}}, nil
+}
+
+func (t *templatePlugin) TestConnection(ctx context.Context, req *plugin.TestConnectionRequest) (*plugin.TestConnectionResponse, error) {
+    return &plugin.TestConnectionResponse{Ok: true, Message: "Connection successful"}, nil
+}
+
+func main() {
+    plugin.ServeCLI(&templatePlugin{})
+}
+```
+
+## Plugin Discovery
+
+From `docs/features/02-plugin-system.md:109-126`:
+
+QueryBox looks for plugins in two locations:
+
+### 1. User Plugin Directory
+
+The primary location is a user-writable directory:
+
+- **Linux**: `$XDG_CONFIG_HOME/querybox/plugins` (usually `~/.config/querybox/plugins`)
+- **macOS**: `~/Library/Application Support/querybox/plugins`
+- **Windows**: `%APPDATA%\querybox\plugins`
+
+At startup, QueryBox copies bundled plugins from `bin/plugins` to this directory, overwriting existing files. This keeps bundled plugins up-to-date while allowing users to add custom plugins.
+
+### 2. Bundled Plugin Directory
+
+The fallback location is `bin/plugins` next to the executable (or inside `.app` bundles on macOS).
+
+### Plugin Registration
+
+1. QueryBox scans both directories at startup
+2. Executes `plugin info` (2s timeout) for each binary
+3. Caches metadata in memory for the process lifetime
+4. User directory takes precedence over bundled directory when names conflict
+
+### Manual Rescan
+
+Plugins are not automatically reloaded. To refresh without restarting:
+
+- Click **Rescan** in the Plugins window (triggers synchronous re-probe)
+- Or restart the application
+
+## Distribution Strategies
+
+### 1. Bundle with Application
+
+Place plugins in `bin/plugins/` before packaging:
+
+```bash
+task build:plugins
+task package
+```
+
+The bundled plugins are automatically copied to the user directory on first launch.
+
+### 2. Standalone Distribution
+
+Distribute plugins as separate downloads:
+
+1. Build the plugin binary
+2. Package with installation instructions
+3. Users manually copy to their plugin directory
+
+**Example distribution package**:
+```
+myplugin-v1.0.0-linux-amd64.tar.gz
+├── myplugin              # Binary
+├── README.md             # Installation instructions
+└── LICENSE
+```
+
+**Installation instructions**:
+```bash
+# Linux/macOS
+mkdir -p ~/.config/querybox/plugins
+cp myplugin ~/.config/querybox/plugins/
+chmod +x ~/.config/querybox/plugins/myplugin
+
+# Windows (PowerShell)
+mkdir "$env:APPDATA\querybox\plugins" -Force
+cp myplugin.exe "$env:APPDATA\querybox\plugins\"
+```
+
+### 3. Plugin Repository (Future)
+
+While not currently implemented, QueryBox could support:
+
+- Central plugin registry
+- In-app plugin browser
+- Automatic updates
+
+## Dependencies
+
+### Managing Go Dependencies
+
+Plugins can use any Go module. Add dependencies to your plugin's `go.mod`:
+
+```bash
+cd plugins/myplugin
+go get github.com/lib/pq
+```
+
+Or rely on the workspace root's dependencies:
+
+```go
+// plugins/myplugin/main.go
+import (
+    "github.com/felixdotgo/querybox/pkg/plugin"
+    "github.com/lib/pq"  // Shared dependency
+)
+```
+
+### Vendor Dependencies (Optional)
+
+For reproducible builds:
+
+```bash
+cd plugins/myplugin
+go mod vendor
+go build -mod=vendor -o ../../bin/plugins/myplugin
+```
+
+## Binary Size Optimization
+
+### Build Flags
+
+Reduce binary size with linker flags:
+
+```bash
+go build -ldflags="-s -w" -o bin/plugins/myplugin plugins/myplugin/main.go
+```
+
+- `-s`: Strip symbol table
+- `-w`: Strip DWARF debugging info
+
+### UPX Compression
+
+Further compress with [UPX](https://upx.github.io/):
+
+```bash
+upx --best --lzma bin/plugins/myplugin
+```
+
+**Before/After Example**:
+```
+mysql (uncompressed):    12.5 MB
+mysql (stripped):        10.2 MB
+mysql (UPX compressed):   3.8 MB
+```
+
+## Versioning
+
+Plugins should follow [Semantic Versioning](https://semver.org/):
+
+```go
+func (p *myPlugin) Info(ctx context.Context, _ *pluginpb.PluginV1_InfoRequest) (*plugin.InfoResponse, error) {
+    return &plugin.InfoResponse{
+        Name:    "myplugin",
+        Version: "1.2.3",  // MAJOR.MINOR.PATCH
+        // ...
+    }, nil
+}
+```
+
+- **MAJOR**: Incompatible API changes
+- **MINOR**: Backward-compatible features
+- **PATCH**: Backward-compatible bug fixes
+
+## Testing Plugins
+
+### Manual Testing
+
+```bash
+# Build plugin
+task build:plugins
+
+# Test info command
+./bin/plugins/myplugin info
+
+# Test exec command (requires JSON on stdin)
+echo '{"connection":{"dsn":"test"}, "query":"SELECT 1"}' | ./bin/plugins/myplugin exec
+
+# Test authforms command
+./bin/plugins/myplugin authforms
+```
+
+### Automated Testing
+
+Create test files alongside your plugin:
+
+```go
+// plugins/myplugin/myplugin_test.go
+package main
+
+import (
+    "context"
+    "testing"
+
+    "github.com/felixdotgo/querybox/pkg/plugin"
+)
+
+func TestInfo(t *testing.T) {
+    p := &myPlugin{}
+    resp, err := p.Info(context.Background(), nil)
+    if err != nil {
+        t.Fatalf("Info failed: %v", err)
+    }
+    if resp.Name != "myplugin" {
+        t.Errorf("Expected name 'myplugin', got '%s'", resp.Name)
+    }
+}
+```
+
+Run tests:
+
+```bash
+cd plugins/myplugin
+go test ./...
+```
+
+## CI/CD Integration
+
+### GitHub Actions Example
+
+```yaml
+name: Build Plugins
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Build Plugin
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: task build:plugins
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: myplugin-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/plugins/
+```
+
+## Packaging for Release
+
+### Create Release Archives
+
+```bash
+# Linux
+GOOS=linux GOARCH=amd64 task build:plugins
+tar -czf myplugin-v1.0.0-linux-amd64.tar.gz -C bin/plugins myplugin
+
+# macOS
+GOOS=darwin GOARCH=arm64 task build:plugins
+tar -czf myplugin-v1.0.0-darwin-arm64.tar.gz -C bin/plugins myplugin
+
+# Windows
+GOOS=windows GOARCH=amd64 task build:plugins
+zip myplugin-v1.0.0-windows-amd64.zip bin/plugins/myplugin.exe
+```
+
+### GitHub Releases
+
+Attach archives to GitHub releases with checksums:
+
+```bash
+sha256sum myplugin-*.tar.gz myplugin-*.zip > checksums.txt
+```
+
+## Debugging Build Issues
+
+### Enable Verbose Output
+
+```bash
+go build -v -o bin/plugins/myplugin plugins/myplugin/main.go
+```
+
+### Check Dependencies
+
+```bash
+cd plugins/myplugin
+go mod tidy
+go mod verify
+```
+
+### View Build Environment
+
+```bash
+go env
+```

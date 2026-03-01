@@ -1,0 +1,130 @@
+---
+title: "info Command"
+description: "Returns plugin metadata including name, version, capabilities, and type"
+---
+
+## Overview
+
+The `info` command returns basic metadata about the plugin. The host calls this command during plugin discovery at startup to catalog available plugins.
+
+## Command Invocation
+
+```bash
+<plugin-binary> info
+```
+
+**Stdin:** None (empty)
+
+**Stdout:** JSON-encoded `InfoResponse` object
+
+**Timeout:** 2 seconds
+
+**Required:** Yes - all plugins must implement this command
+
+## Response Structure
+
+<ResponseField name="type" type="enum" required>
+  Plugin category. Currently only `DRIVER` (value: 1) is supported.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable plugin name (e.g., "MySQL", "PostgreSQL")
+</ResponseField>
+
+<ResponseField name="version" type="string" required>
+  Semantic version string (e.g., "1.0.0")
+</ResponseField>
+
+<ResponseField name="description" type="string" required>
+  Brief description of the plugin's purpose
+</ResponseField>
+
+<ResponseField name="url" type="string">
+  Homepage, documentation, or repository URL
+</ResponseField>
+
+<ResponseField name="author" type="string">
+  Maintainer or organization name
+</ResponseField>
+
+<ResponseField name="license" type="string">
+  SPDX license identifier (e.g., "MIT", "GPL-2.0")
+</ResponseField>
+
+<ResponseField name="iconUrl" type="string">
+  URL to a small icon image for the plugin
+</ResponseField>
+
+<ResponseField name="capabilities" type="string[]">
+  Array of feature flags. Recognized capabilities:
+  - `"explain-query"`: Plugin supports query execution plans via `options["explain-query"] = "yes"`
+  - `"query"`: Plugin supports standard query execution
+</ResponseField>
+
+<ResponseField name="tags" type="string[]">
+  Categorization tags (e.g., `["sql", "relational"]`)
+</ResponseField>
+
+<ResponseField name="contact" type="string">
+  Maintainer email or contact URL
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  Free-form string-to-string map for arbitrary plugin-specific information
+</ResponseField>
+
+<ResponseField name="settings" type="object">
+  String-to-string map with hints for the host (e.g., default values)
+</ResponseField>
+
+## Example Implementation
+
+From `plugins/mysql/main.go`:
+
+```go
+func (m *mysqlPlugin) Info(ctx context.Context, _ *pluginpb.PluginV1_InfoRequest) (*plugin.InfoResponse, error) {
+    return &plugin.InfoResponse{
+        Type:        plugin.TypeDriver,
+        Name:        "MySQL",
+        Version:     "0.1.0",
+        Description: "MySQL database driver",
+        Url:         "https://www.mysql.com/",
+        Author:      "Oracle",
+        Capabilities: []string{"query", "explain-query"},
+        Tags:        []string{"sql", "relational"},
+        License:     "GPL-2.0",
+        IconUrl:     "https://www.mysql.com/common/logos/logo-mysql-170x115.png",
+    }, nil
+}
+```
+
+## Response Format
+
+The plugin must write a protobuf-JSON encoded response to stdout:
+
+```json
+{
+  "type": "DRIVER",
+  "name": "MySQL",
+  "version": "0.1.0",
+  "description": "MySQL database driver",
+  "url": "https://www.mysql.com/",
+  "author": "Oracle",
+  "capabilities": ["query", "explain-query"],
+  "tags": ["sql", "relational"],
+  "license": "GPL-2.0",
+  "iconUrl": "https://www.mysql.com/common/logos/logo-mysql-170x115.png"
+}
+```
+
+## Error Handling
+
+- If the command fails, write error details to **stderr** and exit with non-zero status code
+- The host will skip plugins that fail the `info` probe during discovery
+- Errors do not prevent other plugins from loading
+
+## Notes
+
+- The host caches `info` results for the lifetime of the process
+- Changing plugin metadata requires restarting the application or clicking **Rescan** in the Plugins window
+- Unknown fields in the response are ignored for forward compatibility

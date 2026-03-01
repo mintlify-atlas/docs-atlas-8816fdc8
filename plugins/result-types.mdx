@@ -1,0 +1,324 @@
+---
+title: Result Types
+description: Understanding SQL, document, and key-value result types in QueryBox plugins
+---
+
+## Overview
+
+QueryBox plugins return structured results through three distinct result types: `SqlResult`, `DocumentResult`, and `KeyValueResult`. Each type is optimized for different data models and use cases.
+
+All result types are defined in the protobuf contract (`contracts/plugin/v1/plugin.proto`) and exported as type aliases in `pkg/plugin/plugin.go` for plugin authors.
+
+## Result Type Selection
+
+The `ExecResponse` contains an `ExecResult` with exactly one of the following payloads:
+
+| Field | Type | Use Case |
+|-------|------|----------|
+| `sql` | `SqlResult{columns, rows}` | Relational databases with column names |
+| `document` | `DocumentResult{documents}` | JSON document stores (MongoDB, etc.) |
+| `kv` | `KeyValueResult{entries}` | Key-value stores or raw text output |
+
+## SqlResult
+
+`SqlResult` represents tabular data with named columns and rows. This is the standard format for relational databases like MySQL, PostgreSQL, and SQLite.
+
+### Structure
+
+```go
+type SqlResult struct {
+    Columns []*Column  // Column metadata
+    Rows    []*Row     // Row data
+}
+
+type Column struct {
+    Name string  // Column name
+}
+
+type Row struct {
+    Values []string  // Cell values as strings
+}
+```
+
+### Example Implementation
+
+From `plugins/mysql/main.go:186-224`:
+
+```go
+func (m *mysqlPlugin) Exec(ctx context.Context, req *plugin.ExecRequest) (*plugin.ExecResponse, error) {
+    // ... connection setup ...
+
+    rows, err := db.Query(req.Query)
+    if err != nil {
+        return &plugin.ExecResponse{Error: fmt.Sprintf("query error: %v", err)}, nil
+    }
+    defer rows.Close()
+
+    cols, err := rows.Columns()
+    if err != nil {
+        return &plugin.ExecResponse{Error: fmt.Sprintf("cols error: %v", err)}, nil
+    }
+
+    // Prepare column metadata
+    colMeta := make([]*plugin.Column, len(cols))
+    for i, c := range cols {
+        colMeta[i] = &plugin.Column{Name: c}
+    }
+
+    // Scan rows
+    var rowResults []*plugin.Row
+    for rows.Next() {
+        vals := make([]interface{}, len(cols))
+        ptrs := make([]interface{}, len(cols))
+        for i := range vals {
+            ptrs[i] = &vals[i]
+        }
+        if err := rows.Scan(ptrs...); err != nil {
+            return &plugin.ExecResponse{Error: fmt.Sprintf("scan error: %v", err)}, nil
+        }
+        strs := make([]string, len(cols))
+        for i, v := range vals {
+            strs[i] = plugin.FormatSQLValue(v)
+        }
+        rowResults = append(rowResults, &plugin.Row{Values: strs})
+    }
+
+    return &plugin.ExecResponse{
+        Result: &plugin.ExecResult{
+            Payload: &pluginpb.PluginV1_ExecResult_Sql{
+                Sql: &plugin.SqlResult{
+                    Columns: colMeta,
+                    Rows:    rowResults,
+                },
+            },
+        },
+    }, nil
+}
+```
+
+### FormatSQLValue Helper
+
+The `plugin.FormatSQLValue` helper function (`pkg/plugin/plugin.go:33-53`) converts database values to strings:
+
+- `nil` → empty string
+- `[]byte` (text) → UTF-8 string
+- `[]byte` (binary) → hex string with `0x` prefix
+- All other types → `fmt.Sprintf("%v", value)`
+
+```go
+func FormatSQLValue(v interface{}) string {
+    if v == nil {
+        return ""
+    }
+    switch t := v.(type) {
+    case []byte:
+        if utf8.Valid(t) {
+            return string(t)
+        }
+        return fmt.Sprintf("0x%x", t)
+    default:
+        return fmt.Sprintf("%v", v)
+    }
+}
+```
+
+## DocumentResult
+
+`DocumentResult` represents JSON documents, typically used for MongoDB and other document stores. Each document is a structured object.
+
+### Structure
+
+```go
+type DocumentResult struct {
+    Documents []*structpb.Struct  // Array of JSON objects
+}
+```
+
+### Example Implementation
+
+From `plugins/mongodb/main.go:353-379`:
+
+```go
+func cursorToDocumentResponse(ctx context.Context, cursor *mongo.Cursor) (*plugin.ExecResponse, error) {
+    var docs []*structpb.Struct
+    for cursor.Next(ctx) {
+        var doc bson.D
+        if err := cursor.Decode(&doc); err != nil {
+            continue
+        }
+        s, err := bsonDocToStruct(doc)
+        if err != nil {
+            continue
+        }
+        docs = append(docs, s)
+    }
+    if err := cursor.Err(); err != nil {
+        return &plugin.ExecResponse{Error: fmt.Sprintf("cursor error: %v", err)}, nil
+    }
+    if docs == nil {
+        docs = []*structpb.Struct{}
+    }
+    return &plugin.ExecResponse{
+        Result: &plugin.ExecResult{
+            Payload: &pluginpb.PluginV1_ExecResult_Document{
+                Document: &plugin.DocumentResult{Documents: docs},
+            },
+        },
+    }, nil
+}
+```
+
+### BSON to Struct Conversion
+
+The MongoDB plugin uses extended JSON to safely handle BSON-specific types like ObjectID:
+
+```go
+func bsonDocToStruct(doc bson.D) (*structpb.Struct, error) {
+    raw, err := bson.MarshalExtJSON(doc, false, false)
+    if err != nil {
+        return nil, fmt.Errorf("marshal ext-json: %w", err)
+    }
+    var m map[string]interface{}
+    if err := json.Unmarshal(raw, &m); err != nil {
+        return nil, fmt.Errorf("unmarshal to map: %w", err)
+    }
+    return structpb.NewStruct(m)
+}
+```
+
+## KeyValueResult
+
+`KeyValueResult` represents simple key-value pairs. This is ideal for Redis, configuration stores, or wrapping scalar results.
+
+### Structure
+
+```go
+type KeyValueResult struct {
+    Data map[string]string  // Key-value pairs
+}
+```
+
+### Example Implementation
+
+From `plugins/redis/main.go:165-227`:
+
+```go
+func formatResult(val interface{}) *plugin.ExecResult {
+    switch v := val.(type) {
+    case nil:
+        return kvSingleResult("(nil)")
+
+    case string:
+        return kvSingleResult(v)
+
+    case int64:
+        return kvSingleResult(strconv.FormatInt(v, 10))
+
+    case []interface{}:
+        // Hash pairs (even-length slice with string keys)
+        if len(v) > 0 && len(v)%2 == 0 {
+            _, firstIsStr := v[0].(string)
+            if firstIsStr {
+                data := make(map[string]string, len(v)/2)
+                for i := 0; i+1 < len(v); i += 2 {
+                    data[fmt.Sprintf("%v", v[i])] = fmt.Sprintf("%v", v[i+1])
+                }
+                return &plugin.ExecResult{
+                    Payload: &pluginpb.PluginV1_ExecResult_Kv{
+                        Kv: &plugin.KeyValueResult{Data: data},
+                    },
+                }
+            }
+        }
+        // Fall back to SqlResult for generic lists
+        // ...
+
+    default:
+        return kvSingleResult(fmt.Sprintf("%v", v))
+    }
+}
+
+func kvSingleResult(value string) *plugin.ExecResult {
+    return &plugin.ExecResult{
+        Payload: &pluginpb.PluginV1_ExecResult_Kv{
+            Kv: &plugin.KeyValueResult{Data: map[string]string{"result": value}},
+        },
+    }
+}
+```
+
+### Use Cases
+
+**Single scalar values** (Redis GET, SET):
+```go
+return kvSingleResult("OK")
+// Renders as: {"result": "OK"}
+```
+
+**Hash results** (Redis HGETALL):
+```go
+data := map[string]string{
+    "name": "Alice",
+    "age": "30",
+}
+return &plugin.ExecResult{
+    Payload: &pluginpb.PluginV1_ExecResult_Kv{
+        Kv: &plugin.KeyValueResult{Data: data},
+    },
+}
+```
+
+**Metadata responses**:
+```go
+// From MongoDB insertOne
+return kvResponse(map[string]string{
+    "insertedId": fmt.Sprintf("%v", res.InsertedID),
+})
+```
+
+## Choosing the Right Type
+
+| Database Type | Primary Result Type | Example |
+|---------------|-------------------|----------|
+| Relational (MySQL, PostgreSQL, SQLite) | `SqlResult` | Tables with columns and rows |
+| Document (MongoDB, ArangoDB) | `DocumentResult` | JSON documents |
+| Key-Value (Redis) | `KeyValueResult` | Hash maps, scalar values |
+| Mixed Operations | Context-dependent | MongoDB can use `KeyValueResult` for metadata (insertedId, matchedCount) |
+
+## Error Handling
+
+Always return errors in the `Error` field, not as a Go error:
+
+```go
+// ✅ Correct
+return &plugin.ExecResponse{
+    Error: fmt.Sprintf("connection failed: %v", err),
+}, nil
+
+// ❌ Incorrect - breaks plugin protocol
+return nil, err
+```
+
+## Empty Results
+
+Always return empty collections, never nil:
+
+```go
+// ✅ Correct
+if docs == nil {
+    docs = []*structpb.Struct{}
+}
+
+// ✅ Correct
+rows := []*plugin.Row{}
+return &plugin.ExecResponse{
+    Result: &plugin.ExecResult{
+        Payload: &pluginpb.PluginV1_ExecResult_Sql{
+            Sql: &plugin.SqlResult{
+                Columns: cols,
+                Rows:    rows,
+            },
+        },
+    },
+}
+```

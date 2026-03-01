@@ -1,0 +1,666 @@
+---
+title: Plugin Contract Specification
+description: Complete reference for the QueryBox plugin protobuf contract
+---
+
+QueryBox plugins communicate using Protocol Buffers (protobuf) messages serialized as JSON. This page documents the complete contract defined in `contracts/plugin/v1/plugin.proto`.
+
+## PluginService Interface
+
+All plugins implement the `PluginService` gRPC service interface:
+
+```protobuf
+service PluginService {
+  rpc Info(PluginV1.InfoRequest) returns (PluginV1.InfoResponse);
+  rpc Exec(PluginV1.ExecRequest) returns (PluginV1.ExecResponse);
+  rpc AuthForms(PluginV1.AuthFormsRequest) returns (PluginV1.AuthFormsResponse);
+  rpc ConnectionTree(PluginV1.ConnectionTreeRequest) returns (PluginV1.ConnectionTreeResponse);
+  rpc TestConnection(PluginV1.TestConnectionRequest) returns (PluginV1.TestConnectionResponse);
+}
+```
+
+<Info>
+While defined as gRPC for type generation, plugins communicate via JSON over stdin/stdout, not gRPC transport.
+</Info>
+
+## Type Aliases (Go)
+
+The `pkg/plugin` package exports convenient type aliases:
+
+```go
+// Core types
+type InfoResponse = pluginpb.PluginV1_InfoResponse
+type ExecRequest = pluginpb.PluginV1_ExecRequest
+type ExecResponse = pluginpb.PluginV1_ExecResponse
+type ExecResult = pluginpb.PluginV1_ExecResult
+
+// Result types
+type SqlResult = pluginpb.PluginV1_SqlResult
+type DocumentResult = pluginpb.PluginV1_DocumentResult
+type KeyValueResult = pluginpb.PluginV1_KeyValueResult
+type Column = pluginpb.PluginV1_Column
+type Row = pluginpb.PluginV1_Row
+
+// Auth types
+type AuthField = pluginpb.PluginV1_AuthField
+type AuthForm = pluginpb.PluginV1_AuthForm
+type AuthFormsRequest = pluginpb.PluginV1_AuthFormsRequest
+type AuthFormsResponse = pluginpb.PluginV1_AuthFormsResponse
+
+// Connection tree types
+type ConnectionTreeRequest = pluginpb.PluginV1_ConnectionTreeRequest
+type ConnectionTreeResponse = pluginpb.PluginV1_ConnectionTreeResponse
+type ConnectionTreeNode = pluginpb.PluginV1_ConnectionTreeNode
+type ConnectionTreeAction = pluginpb.PluginV1_ConnectionTreeAction
+
+// Test connection types
+type TestConnectionRequest = pluginpb.PluginV1_TestConnectionRequest
+type TestConnectionResponse = pluginpb.PluginV1_TestConnectionResponse
+
+// Enums
+type DriverType = pluginpb.PluginV1_Type
+const TypeDriver DriverType = pluginpb.PluginV1_DRIVER
+```
+
+## Info Command
+
+### InfoRequest
+
+Empty message (no fields).
+
+### InfoResponse
+
+```go
+type InfoResponse struct {
+    Type         DriverType        // Plugin type (currently only DRIVER)
+    Name         string            // Plugin name (e.g., "mysql")
+    Version      string            // Semantic version (e.g., "1.0.0")
+    Description  string            // Short description
+    Url          string            // Homepage, docs, or repo URL
+    Author       string            // Maintainer or organization
+    Metadata     map[string]string // Arbitrary plugin-specific info
+    Settings     map[string]string // Hints for core (defaults, etc.)
+    Capabilities []string          // Feature flags (e.g., "explain-query")
+    Tags         []string          // Categories (e.g., ["sql", "relational"])
+    License      string            // SPDX identifier or text
+    IconUrl      string            // Link to icon image
+    Contact      string            // Maintainer email/URL
+}
+```
+
+**Example:**
+
+```json
+{
+  "type": "DRIVER",
+  "name": "MySQL",
+  "version": "0.1.0",
+  "description": "MySQL database driver",
+  "url": "https://www.mysql.com/",
+  "author": "Oracle",
+  "capabilities": ["query", "explain-query"],
+  "tags": ["sql", "relational"],
+  "license": "GPL-2.0",
+  "iconUrl": "https://www.mysql.com/common/logos/logo-mysql-170x115.png"
+}
+```
+
+### Plugin Types
+
+```protobuf
+enum Type {
+  UNKNOWN = 0;
+  DRIVER = 1;  // Database driver
+}
+```
+
+Currently, only `DRIVER` type is supported.
+
+## AuthForms Command
+
+### AuthFormsRequest
+
+Empty message (no fields).
+
+### AuthFormsResponse
+
+```go
+type AuthFormsResponse struct {
+    Forms map[string]*AuthForm  // Map of form key to form definition
+}
+```
+
+### AuthForm
+
+```go
+type AuthForm struct {
+    Key    string        // Machine key (e.g., "basic", "dsn")
+    Name   string        // Display name (e.g., "Basic", "DSN")
+    Fields []*AuthField  // Form fields
+}
+```
+
+### AuthField
+
+```go
+type AuthField struct {
+    Type        FieldType  // Input field type
+    Name        string     // Machine name (lowercase, no spaces)
+    Label       string     // Human-friendly label
+    Value       string     // Default value
+    Required    bool       // Whether field is required
+    Options     []string   // Options for SELECT fields
+    Placeholder string     // Placeholder text
+}
+```
+
+### Field Types
+
+```protobuf
+enum FieldType {
+  FIELD_UNKNOWN = 0;
+  TEXT = 1;       // Text input
+  NUMBER = 2;     // Numeric input
+  PASSWORD = 3;   // Password input (masked)
+  CHECKBOX = 4;   // Boolean checkbox
+  SELECT = 5;     // Dropdown select
+  FILE_PATH = 6;  // File picker
+}
+```
+
+**Constants in Go:**
+
+```go
+const (
+    AuthFieldText     = pluginpb.PluginV1_AuthField_TEXT
+    AuthFieldNumber   = pluginpb.PluginV1_AuthField_NUMBER
+    AuthFieldPassword = pluginpb.PluginV1_AuthField_PASSWORD
+    AuthFieldSelect   = pluginpb.PluginV1_AuthField_SELECT
+    AuthFieldCheckbox = pluginpb.PluginV1_AuthField_CHECKBOX
+    AuthFieldFilePath = pluginpb.PluginV1_AuthField_FILE_PATH
+)
+```
+
+**Example:**
+
+```json
+{
+  "forms": {
+    "basic": {
+      "key": "basic",
+      "name": "Basic",
+      "fields": [
+        {
+          "type": "TEXT",
+          "name": "host",
+          "label": "Host",
+          "required": true,
+          "placeholder": "127.0.0.1",
+          "value": "127.0.0.1"
+        },
+        {
+          "type": "NUMBER",
+          "name": "port",
+          "label": "Port",
+          "placeholder": "3306",
+          "value": "3306"
+        },
+        {
+          "type": "PASSWORD",
+          "name": "password",
+          "label": "Password"
+        }
+      ]
+    }
+  }
+}
+```
+
+## Exec Command
+
+### ExecRequest
+
+```go
+type ExecRequest struct {
+    Connection map[string]string  // Plugin-defined connection params
+    Query      string             // Query or command to execute
+    Options    map[string]string  // Optional execution parameters
+}
+```
+
+**Example request:**
+
+```json
+{
+  "connection": {
+    "host": "localhost",
+    "user": "root",
+    "database": "mydb"
+  },
+  "query": "SELECT * FROM users",
+  "options": {
+    "explain-query": "yes"
+  }
+}
+```
+
+### ExecResponse
+
+```go
+type ExecResponse struct {
+    Result *ExecResult  // Typed result (oneof sql/document/kv)
+    Error  string       // Error message (if any)
+}
+```
+
+### ExecResult
+
+```go
+type ExecResult struct {
+    Payload isExecResult_Payload  // oneof: Sql, Document, or Kv
+}
+```
+
+The `Payload` field contains exactly **one** of:
+
+- `Sql` - `*SqlResult` for tabular data
+- `Document` - `*DocumentResult` for JSON documents
+- `Kv` - `*KeyValueResult` for key-value data
+
+### SqlResult
+
+```go
+type SqlResult struct {
+    Columns []*Column  // Column metadata
+    Rows    []*Row     // Result rows
+}
+
+type Column struct {
+    Name string  // Column name
+    Type string  // Database type (optional, e.g., "varchar", "int")
+}
+
+type Row struct {
+    Values []string  // Cell values as strings
+}
+```
+
+**Example:**
+
+```json
+{
+  "result": {
+    "sql": {
+      "columns": [
+        {"name": "id", "type": "int"},
+        {"name": "name", "type": "varchar"}
+      ],
+      "rows": [
+        {"values": ["1", "Alice"]},
+        {"values": ["2", "Bob"]}
+      ]
+    }
+  }
+}
+```
+
+### DocumentResult
+
+```go
+type DocumentResult struct {
+    Documents []*structpb.Struct  // Array of JSON objects
+}
+```
+
+Used for document-oriented databases (MongoDB, CouchDB, etc.).
+
+**Example:**
+
+```json
+{
+  "result": {
+    "document": {
+      "documents": [
+        {"_id": "1", "name": "Alice", "age": 30},
+        {"_id": "2", "name": "Bob", "age": 25}
+      ]
+    }
+  }
+}
+```
+
+### KeyValueResult
+
+```go
+type KeyValueResult struct {
+    Data map[string]string  // Key-value pairs
+}
+```
+
+Used for key-value stores (Redis) or raw text output.
+
+**Example:**
+
+```json
+{
+  "result": {
+    "kv": {
+      "data": {
+        "key1": "value1",
+        "key2": "value2"
+      }
+    }
+  }
+}
+```
+
+## Connection Tree
+
+### ConnectionTreeRequest
+
+```go
+type ConnectionTreeRequest struct {
+    Connection map[string]string  // Same connection params as ExecRequest
+}
+```
+
+### ConnectionTreeResponse
+
+```go
+type ConnectionTreeResponse struct {
+    Nodes []*ConnectionTreeNode  // Root-level tree nodes
+}
+```
+
+### ConnectionTreeNode
+
+```go
+type ConnectionTreeNode struct {
+    Key      string                  // Unique identifier within tree
+    Label    string                  // User-visible text
+    Children []*ConnectionTreeNode   // Child nodes (recursive)
+    Actions  []*ConnectionTreeAction // Available actions
+    NodeType NodeType                // Type hint for icon rendering
+}
+```
+
+### ConnectionTreeAction
+
+```go
+type ConnectionTreeAction struct {
+    Type   string  // Machine name (e.g., "select", "describe")
+    Title  string  // Display text for context menu
+    Query  string  // Plugin-interpreted payload (often SQL)
+    Hidden bool    // If true, hide from context menu (click-only)
+    NewTab bool    // If true, open result in new tab
+}
+```
+
+### Node Types
+
+```protobuf
+enum NodeType {
+  NODE_TYPE_UNKNOWN    = 0;  // Generic/unspecified
+  NODE_TYPE_DATABASE   = 1;
+  NODE_TYPE_TABLE      = 2;
+  NODE_TYPE_COLUMN     = 3;
+  NODE_TYPE_SCHEMA     = 4;
+  NODE_TYPE_VIEW       = 5;
+  NODE_TYPE_ACTION     = 6;  // Action node (not a database object)
+  NODE_TYPE_COLLECTION = 7;  // Document store collection
+  NODE_TYPE_KEY        = 8;  // Key-value store key
+}
+```
+
+**Constants in Go:**
+
+```go
+const (
+    ConnectionTreeNodeTypeDatabase   = pluginpb.PluginV1_NODE_TYPE_DATABASE
+    ConnectionTreeNodeTypeTable      = pluginpb.PluginV1_NODE_TYPE_TABLE
+    ConnectionTreeNodeTypeColumn     = pluginpb.PluginV1_NODE_TYPE_COLUMN
+    ConnectionTreeNodeTypeSchema     = pluginpb.PluginV1_NODE_TYPE_SCHEMA
+    ConnectionTreeNodeTypeView       = pluginpb.PluginV1_NODE_TYPE_VIEW
+    ConnectionTreeNodeTypeAction     = pluginpb.PluginV1_NODE_TYPE_ACTION
+    ConnectionTreeNodeTypeCollection = pluginpb.PluginV1_NODE_TYPE_COLLECTION
+    ConnectionTreeNodeTypeKey        = pluginpb.PluginV1_NODE_TYPE_KEY
+)
+```
+
+### Action Types
+
+```go
+const (
+    ConnectionTreeActionSelect   = "select"
+    ConnectionTreeActionDescribe = "describe"
+
+    // DDL actions
+    ConnectionTreeActionCreateDatabase = "create-database"
+    ConnectionTreeActionDropDatabase   = "drop-database"
+    ConnectionTreeActionCreateTable    = "create-table"
+    ConnectionTreeActionDropTable      = "drop-table"
+)
+```
+
+**Example MySQL tree:**
+
+```json
+{
+  "nodes": [
+    {
+      "key": "mydb",
+      "label": "mydb",
+      "nodeType": "NODE_TYPE_DATABASE",
+      "children": [
+        {
+          "key": "mydb.users",
+          "label": "users",
+          "nodeType": "NODE_TYPE_TABLE",
+          "actions": [
+            {
+              "type": "select",
+              "title": "Select rows",
+              "query": "SELECT * FROM `mydb`.`users` LIMIT 100;",
+              "hidden": true,
+              "newTab": true
+            },
+            {
+              "type": "drop-table",
+              "title": "Drop table",
+              "query": "DROP TABLE `mydb`.`users`;"
+            }
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "type": "create-table",
+          "title": "Create table",
+          "query": "CREATE TABLE `mydb`.`new_table` (id INT);"
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Test Connection
+
+### TestConnectionRequest
+
+```go
+type TestConnectionRequest struct {
+    Connection map[string]string  // Same connection params as ExecRequest
+}
+```
+
+### TestConnectionResponse
+
+```go
+type TestConnectionResponse struct {
+    Ok      bool    // true if connection succeeded
+    Message string  // Success or failure description
+}
+```
+
+**Example success:**
+
+```json
+{
+  "ok": true,
+  "message": "Connection successful"
+}
+```
+
+**Example failure:**
+
+```json
+{
+  "ok": false,
+  "message": "ping error: connection refused"
+}
+```
+
+## Helper Functions
+
+### FormatSQLValue
+
+The `pkg/plugin` package provides a helper for formatting SQL values:
+
+```go
+func FormatSQLValue(v interface{}) string
+```
+
+**Behavior:**
+- `nil` → `""` (empty string)
+- `[]byte` → UTF-8 string if valid, otherwise hex-encoded with `0x` prefix
+- Other types → `fmt.Sprintf("%v", v)`
+
+**Example usage:**
+
+```go
+for i, v := range vals {
+    strs[i] = plugin.FormatSQLValue(v)
+}
+```
+
+### ServeCLI
+
+Bootstraps plugin execution from command-line arguments:
+
+```go
+func ServeCLI(s pluginpb.PluginServiceServer)
+```
+
+**Usage:**
+
+```go
+func main() {
+    plugin.ServeCLI(&myPlugin{})
+}
+```
+
+Parses `os.Args` and routes to appropriate RPC methods:
+- `plugin info` → calls `Info()`
+- `plugin exec` → reads stdin, calls `Exec()`, writes stdout
+- `plugin authforms` → calls `AuthForms()`
+- `plugin connection-tree` → reads stdin, calls `ConnectionTree()`
+- `plugin test-connection` → reads stdin, calls `TestConnection()`
+
+## Error Handling
+
+Plugins should return errors in two ways:
+
+### Method-level errors
+
+Return Go errors for fatal issues (invalid implementation, panics):
+
+```go
+func (m *myPlugin) Exec(ctx context.Context, req *ExecRequest) (*ExecResponse, error) {
+    return nil, fmt.Errorf("not implemented")
+}
+```
+
+The host will display these as system errors.
+
+### Response-level errors
+
+Return errors in the response `Error` field for query/connection failures:
+
+```go
+func (m *myPlugin) Exec(ctx context.Context, req *ExecRequest) (*ExecResponse, error) {
+    db, err := sql.Open("driver", dsn)
+    if err != nil {
+        return &ExecResponse{Error: fmt.Sprintf("connection error: %v", err)}, nil
+    }
+    // ...
+}
+```
+
+The host displays these as user-facing error messages.
+
+## Best Practices
+
+<AccordionGroup>
+<Accordion title="Use type aliases from pkg/plugin">
+Import `github.com/felixdotgo/querybox/pkg/plugin` and use the exported type aliases instead of directly referencing `pluginpb` types. This keeps your code cleaner and isolates you from protobuf implementation details.
+</Accordion>
+
+<Accordion title="Embed UnimplementedPluginServiceServer">
+Always embed `pluginpb.UnimplementedPluginServiceServer` in your plugin struct to get default implementations for optional methods:
+
+```go
+type myPlugin struct {
+    pluginpb.UnimplementedPluginServiceServer
+}
+```
+</Accordion>
+
+<Accordion title="Validate connection parameters">
+Check for required connection fields early and return clear error messages:
+
+```go
+if host := req.Connection["host"]; host == "" {
+    return &ExecResponse{Error: "missing required field: host"}, nil
+}
+```
+</Accordion>
+
+<Accordion title="Handle context cancellation">
+Respect context timeouts for long-running operations:
+
+```go
+rows, err := db.QueryContext(ctx, req.Query)
+```
+</Accordion>
+
+<Accordion title="Close resources">
+Always defer cleanup of database connections and result sets:
+
+```go
+defer db.Close()
+defer rows.Close()
+```
+</Accordion>
+
+<Accordion title="Use FormatSQLValue for SQL results">
+Format values consistently using the provided helper:
+
+```go
+for i, v := range vals {
+    strs[i] = plugin.FormatSQLValue(v)
+}
+```
+</Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/plugins/quickstart">
+    Create your first plugin
+  </Card>
+  <Card title="Overview" icon="book" href="/plugins/overview">
+    Review plugin system architecture
+  </Card>
+</CardGroup>

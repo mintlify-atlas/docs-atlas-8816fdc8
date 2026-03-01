@@ -1,0 +1,414 @@
+---
+title: Installation
+description: Install QueryBox on Windows, macOS, or Linux and get started with database management.
+---
+
+<Warning>
+  QueryBox is currently under development and has not been officially released. These instructions are for building from source. Official releases with installers will be available soon.
+</Warning>
+
+## Prerequisites
+
+Before installing QueryBox, ensure you have the following tools installed on your system:
+
+<AccordionGroup>
+  <Accordion title="Go 1.24+" icon="golang" defaultOpen>
+    QueryBox is built with Go. Download and install from [go.dev/dl](https://go.dev/dl/)
+    
+    Verify installation:
+    ```bash
+    go version
+    # Should output: go version go1.24 or higher
+    ```
+  </Accordion>
+  
+  <Accordion title="Wails v3" icon="window">
+    Wails v3 is the desktop framework powering QueryBox. Install the CLI:
+    
+    ```bash
+    go install github.com/wailsapp/wails/v3/cmd/wails@latest
+    ```
+    
+    For detailed installation instructions, visit the [Wails v3 installation guide](https://v3alpha.wails.io/getting-started/installation/).
+  </Accordion>
+  
+  <Accordion title="Node.js 18+" icon="node-js">
+    Required for frontend build tooling. Download from [nodejs.org](https://nodejs.org/)
+    
+    Verify installation:
+    ```bash
+    node --version
+    # Should output: v18.0.0 or higher
+    ```
+  </Accordion>
+  
+  <Accordion title="Task (Build Automation)" icon="list-check">
+    Task is used for build automation. Install via:
+    
+    <Tabs>
+      <Tab title="Go">
+        ```bash
+        go install github.com/go-task/task/v3/cmd/task@latest
+        ```
+      </Tab>
+      <Tab title="npm">
+        ```bash
+        npm install -g taskfile
+        ```
+      </Tab>
+      <Tab title="Homebrew (macOS)">
+        ```bash
+        brew install go-task
+        ```
+      </Tab>
+    </Tabs>
+    
+    See [taskfile.dev/installation](https://taskfile.dev/installation/) for more options.
+  </Accordion>
+  
+  <Accordion title="Protocol Buffers (Optional)" icon="brackets-curly">
+    Only required if you plan to modify `.proto` files. For most users, this is not needed.
+    
+    <Steps>
+      <Step title="Install protoc">
+        Download from [grpc.io/docs/protoc-installation](https://grpc.io/docs/protoc-installation/)
+        
+        Recommended version: libprotoc 29.6
+      </Step>
+      <Step title="Install Go protoc plugins">
+        ```bash
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
+        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
+        ```
+      </Step>
+    </Steps>
+  </Accordion>
+</AccordionGroup>
+
+## Platform-Specific Requirements
+
+<Tabs>
+  <Tab title="Windows">
+    ### Windows Requirements
+    
+    <Steps>
+      <Step title="Install WebView2">
+        Wails v3 requires Microsoft Edge WebView2 Runtime, which is pre-installed on Windows 11 and recent Windows 10 updates.
+        
+        If needed, download from [Microsoft's WebView2 page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
+      </Step>
+      
+      <Step title="Install Build Tools">
+        For building native modules, install:
+        - Visual Studio 2019 or newer (Community Edition works)
+        - Or, Windows SDK and Build Tools
+        
+        Wails will guide you through this during your first build if anything is missing.
+      </Step>
+    </Steps>
+    
+    <Note>
+      Windows Defender may flag the built executable. This is common for unsigned applications. You can add an exception or sign your builds.
+    </Note>
+  </Tab>
+  
+  <Tab title="macOS">
+    ### macOS Requirements
+    
+    <Steps>
+      <Step title="Install Xcode Command Line Tools">
+        ```bash
+        xcode-select --install
+        ```
+        
+        This provides the necessary compilers and build tools.
+      </Step>
+      
+      <Step title="Grant Permissions">
+        After building, you may need to grant permissions in System Preferences:
+        - **Privacy & Security** → Allow apps from identified developers
+        - Grant any requested permissions for database file access
+      </Step>
+    </Steps>
+    
+    <Note>
+      macOS 10.13 (High Sierra) or newer is required for Wails v3 applications.
+    </Note>
+  </Tab>
+  
+  <Tab title="Linux">
+    ### Linux Requirements
+    
+    QueryBox requires WebKitGTK on Linux. Install the development packages:
+    
+    <Tabs>
+      <Tab title="Ubuntu/Debian">
+        ```bash
+        sudo apt install libgtk-3-dev libwebkit2gtk-4.0-dev
+        ```
+      </Tab>
+      
+      <Tab title="Fedora">
+        ```bash
+        sudo dnf install gtk3-devel webkit2gtk3-devel
+        ```
+      </Tab>
+      
+      <Tab title="Arch Linux">
+        ```bash
+        sudo pacman -S gtk3 webkit2gtk
+        ```
+      </Tab>
+    </Tabs>
+    
+    <Note>
+      Additional dependencies may be required depending on your distribution. Wails will notify you of any missing packages.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Building from Source
+
+<Steps>
+  <Step title="Clone the Repository">
+    ```bash
+    git clone https://github.com/felixdotgo/querybox.git
+    cd querybox
+    ```
+  </Step>
+  
+  <Step title="Build the Plugins">
+    QueryBox's database drivers are standalone executables that need to be built separately:
+    
+    ```bash
+    task build:plugins
+    ```
+    
+    This builds all plugins (MySQL, PostgreSQL, SQLite, Redis, ArangoDB) and places them in `bin/plugins/`.
+    
+    <Note>
+      The build process automatically detects your OS and architecture. Binaries are placed in `bin/plugins/` with `.exe` extension on Windows.
+    </Note>
+    
+    <Accordion title="Cross-compile plugins for other platforms">
+      Override the target platform using standard Go environment variables:
+      
+      ```bash
+      # Build Windows plugins from macOS/Linux
+      GOOS=windows GOARCH=amd64 task build:plugins
+      
+      # Build Linux plugins from Windows/macOS
+      GOOS=linux GOARCH=amd64 task build:plugins
+      
+      # Build macOS plugins (Intel)
+      GOOS=darwin GOARCH=amd64 task build:plugins
+      
+      # Build macOS plugins (Apple Silicon)
+      GOOS=darwin GOARCH=arm64 task build:plugins
+      ```
+    </Accordion>
+  </Step>
+  
+  <Step title="Build QueryBox">
+    Build the production executable:
+    
+    ```bash
+    wails3 build
+    ```
+    
+    The application will be built to the `bin/` directory:
+    - **Windows**: `bin/querybox.exe`
+    - **macOS**: `bin/QueryBox.app`
+    - **Linux**: `bin/querybox`
+    
+    <Accordion title="Build options">
+      Wails supports various build flags:
+      
+      ```bash
+      # Build with debug symbols
+      wails3 build -debug
+      
+      # Build for specific platform
+      wails3 build -platform windows/amd64
+      
+      # Clean build (removes cache)
+      wails3 build -clean
+      ```
+      
+      See `wails3 build --help` for all options.
+    </Accordion>
+  </Step>
+  
+  <Step title="Run QueryBox">
+    Launch the application:
+    
+    <Tabs>
+      <Tab title="Windows">
+        ```bash
+        .\bin\querybox.exe
+        ```
+      </Tab>
+      <Tab title="macOS">
+        ```bash
+        open bin/QueryBox.app
+        # Or from terminal:
+        ./bin/QueryBox.app/Contents/MacOS/querybox
+        ```
+      </Tab>
+      <Tab title="Linux">
+        ```bash
+        ./bin/querybox
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Development Mode
+
+For development with hot-reload:
+
+```bash
+wails3 dev
+```
+
+This starts QueryBox in development mode where both frontend and backend changes are automatically reloaded.
+
+<Note>
+  In development mode, plugins are loaded from `bin/plugins/`. If you modify plugin code, rebuild with `task build:plugins` and the running app will detect the changes within 2 seconds (after clicking the Rescan button in the Plugins window).
+</Note>
+
+## Plugin Installation Directory
+
+At runtime, QueryBox manages plugins in two locations:
+
+<Steps>
+  <Step title="Bundled Plugins">
+    Plugins in `bin/plugins/` are bundled with the application. These are the built-in database drivers.
+  </Step>
+  
+  <Step title="User Plugins">
+    On first launch, QueryBox copies bundled plugins to a user-writable directory:
+    
+    - **Windows**: `%APPDATA%\querybox\plugins`
+    - **macOS**: `~/Library/Application Support/querybox/plugins`
+    - **Linux**: `$XDG_CONFIG_HOME/querybox/plugins` (or `~/.config/querybox/plugins`)
+    
+    This allows you to:
+    - Add custom database drivers
+    - Override built-in plugins
+    - Keep plugins across application updates
+  </Step>
+  
+  <Step title="Plugin Priority">
+    When plugins with the same name exist in both locations, the user directory takes precedence. This lets you customize drivers while preserving the originals.
+  </Step>
+</Steps>
+
+<Warning>
+  Changes to plugin files require restarting QueryBox or clicking **Rescan** in the Plugins window to take effect.
+</Warning>
+
+## Verifying Installation
+
+Once installed, verify QueryBox is working correctly:
+
+<Steps>
+  <Step title="Launch the Application">
+    Open QueryBox using your platform's method (see Step 4 above).
+  </Step>
+  
+  <Step title="Check Plugin Discovery">
+    1. From the main window menu, open **Plugins** window
+    2. You should see all built-in plugins listed:
+       - MySQL
+       - PostgreSQL
+       - SQLite
+       - Redis
+       - ArangoDB
+    
+    Each plugin should display its version and capabilities.
+  </Step>
+  
+  <Step title="Create a Test Connection">
+    1. Open **Connections** window
+    2. Click **New Connection**
+    3. Select a database type (SQLite is easiest for testing)
+    4. Click **Test Connection** to verify the plugin responds correctly
+  </Step>
+</Steps>
+
+<Check>
+  If all plugins are discovered and test connections work, your installation is complete!
+</Check>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Plugins not discovered" icon="triangle-exclamation">
+    **Symptoms**: Plugins window is empty or missing expected drivers
+    
+    **Solutions**:
+    1. Verify plugins were built: `ls bin/plugins/` should show executables
+    2. Check file permissions: plugins must be executable (`chmod +x bin/plugins/*` on Linux/macOS)
+    3. Click **Rescan** button in Plugins window
+    4. Check logs for plugin probe failures (View → Developer → Toggle Developer Tools)
+  </Accordion>
+  
+  <Accordion title="Build fails on Windows" icon="windows">
+    **Common causes**:
+    - Missing Visual Studio Build Tools
+    - WebView2 Runtime not installed
+    - Antivirus blocking build output
+    
+    **Solutions**:
+    1. Install Visual Studio 2019+ or Build Tools for Visual Studio
+    2. Download WebView2 Runtime from Microsoft
+    3. Add `bin/` directory to antivirus exclusions
+  </Accordion>
+  
+  <Accordion title="Permission denied on macOS" icon="apple">
+    **Symptoms**: "QueryBox.app is damaged and can't be opened"
+    
+    **Solution**:
+    ```bash
+    # Remove quarantine attribute
+    xattr -cr bin/QueryBox.app
+    ```
+    
+    Or go to System Preferences → Security & Privacy and allow the app.
+  </Accordion>
+  
+  <Accordion title="WebKitGTK errors on Linux" icon="linux">
+    **Symptoms**: Application won't start or crashes immediately
+    
+    **Solution**:
+    Ensure WebKitGTK 4.0 development libraries are installed:
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install libwebkit2gtk-4.0-37
+    
+    # Fedora
+    sudo dnf install webkit2gtk3
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start Guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Connect to your first database and run queries
+  </Card>
+  <Card
+    title="Plugin Development"
+    icon="puzzle-piece"
+    href="/plugins/overview"
+  >
+    Learn to create custom database drivers
+  </Card>
+</CardGroup>

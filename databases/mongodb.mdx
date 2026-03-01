@@ -1,0 +1,245 @@
+---
+title: MongoDB
+description: Connect to MongoDB databases with QueryBox
+---
+
+QueryBox supports MongoDB through a native driver plugin. Execute MongoDB shell-style queries and manage collections with a familiar interface.
+
+## Connection Methods
+
+<Tabs>
+  <Tab title="Basic">
+    Configure your MongoDB connection using individual parameters:
+
+    <ParamField path="host" type="string" required>
+      MongoDB server hostname or IP address
+      
+      Default: `127.0.0.1`
+    </ParamField>
+
+    <ParamField path="port" type="number">
+      MongoDB server port
+      
+      Default: `27017`
+    </ParamField>
+
+    <ParamField path="user" type="string">
+      Database username
+    </ParamField>
+
+    <ParamField path="password" type="string">
+      Database password
+    </ParamField>
+
+    <ParamField path="database" type="string">
+      Database name to connect to
+      
+      Placeholder: `mydb`
+    </ParamField>
+
+    <ParamField path="auth_source" type="string">
+      Authentication database
+      
+      Default: `admin`
+    </ParamField>
+
+    <ParamField path="tls" type="string">
+      Enable TLS/SSL encryption
+      
+      Options: `false`, `true`
+      
+      Default: `false`
+    </ParamField>
+  </Tab>
+
+  <Tab title="URI">
+    Provide a complete MongoDB connection URI:
+
+    <ParamField path="uri" type="string" required>
+      Full MongoDB connection URI
+      
+      Format: `mongodb://user:pass@host:port/database`
+    </ParamField>
+
+    ### Example URI
+    ```
+    mongodb://admin:password@localhost:27017/mydb?authSource=admin
+    ```
+  </Tab>
+</Tabs>
+
+## Connection String Examples
+
+### Local Development
+```
+mongodb://127.0.0.1:27017/mydb
+```
+
+### With Authentication
+```
+mongodb://user:password@localhost:27017/mydb?authSource=admin
+```
+
+### MongoDB Atlas
+```
+mongodb+srv://username:password@cluster0.mongodb.net/mydb?retryWrites=true&w=majority
+```
+
+### Replica Set
+```
+mongodb://host1:27017,host2:27017,host3:27017/mydb?replicaSet=rs0
+```
+
+### With TLS
+```
+mongodb://user:pass@localhost:27017/mydb?tls=true&authSource=admin
+```
+
+## Supported Query Syntax
+
+QueryBox supports MongoDB shell-style queries:
+
+### Collection Queries
+
+```javascript
+// Find documents
+db.users.find({})
+db.users.find({"status": "active"})
+db.users.findOne({"name": "Alice"})
+
+// Insert documents
+db.users.insertOne({"name": "Bob", "age": 25})
+db.users.insertMany([{"name": "Charlie"}, {"name": "Diana"}])
+
+// Update documents
+db.users.updateOne({"name": "Bob"}, {"$set": {"age": 26}})
+db.users.updateMany({"status": "inactive"}, {"$set": {"archived": true}})
+db.users.replaceOne({"_id": ObjectId("...")}, {"name": "New Name"})
+
+// Delete documents
+db.users.deleteOne({"name": "Bob"})
+db.users.deleteMany({"status": "archived"})
+
+// Aggregation
+db.orders.aggregate([{"$group": {"_id": "$status", "count": {"$sum": 1}}}])
+
+// Count documents
+db.users.countDocuments({"status": "active"})
+db.users.estimatedDocumentCount()
+
+// Distinct values
+db.users.distinct("status")
+db.users.distinct("city", {"country": "USA"})
+
+// Create index
+db.users.createIndex({"email": 1})
+
+// Drop collection
+db.users.drop()
+```
+
+### Database Operations
+
+```javascript
+// Create database (implicitly created when you create a collection)
+db.createCollection("new_collection")
+
+// Drop database
+db.dropDatabase()
+
+// List collections
+db.listCollections()
+db.getCollectionNames()
+```
+
+### Raw Commands
+
+```javascript
+// Execute raw database commands
+{"ping": 1}
+{"dbStats": 1}
+{"collStats": "users"}
+```
+
+## Supported Features
+
+<CardGroup cols={2}>
+  <Card title="CRUD Operations" icon="database">
+    Find, insert, update, delete documents
+  </Card>
+  
+  <Card title="Aggregation" icon="chart-line">
+    Complex data aggregation pipelines
+  </Card>
+  
+  <Card title="Database Browser" icon="folder-tree">
+    Browse databases and collections
+  </Card>
+  
+  <Card title="Index Management" icon="list">
+    Create and manage indexes
+  </Card>
+</CardGroup>
+
+## Capabilities
+
+- **Query Execution**: MongoDB shell-style query syntax
+- **CRUD Operations**: Full support for find, insert, update, delete
+- **Aggregation Framework**: Execute aggregation pipelines
+- **Collection Management**: Create and drop collections
+- **Database Management**: Create and drop databases
+- **Index Operations**: Create indexes on collections
+- **Connection Tree**: Browse databases and collections hierarchically
+- **Document Results**: View results as structured documents
+- **TLS Support**: Secure connections with embedded root certificates
+
+## Result Types
+
+MongoDB queries return different result formats:
+
+- **Document Results**: Find, aggregate, and raw command queries
+- **Key-Value Results**: Insert, update, delete operations showing counts and IDs
+
+## Database Structure
+
+The MongoDB plugin displays:
+
+1. **Databases**: All accessible databases
+2. **Collections**: All collections within each database
+3. **Actions**: Quick find and drop operations
+
+## Notes
+
+<Info>
+  QueryBox uses extended JSON format for BSON types like ObjectID, ensuring proper serialization.
+</Info>
+
+<Tip>
+  You can execute multiple operations by running them sequentially. Each operation returns its own result.
+</Tip>
+
+<Warning>
+  Drop operations (dropDatabase, drop collection) are permanent and cannot be undone.
+</Warning>
+
+## Extended JSON Support
+
+QueryBox supports MongoDB Extended JSON for special BSON types:
+
+```javascript
+// ObjectId
+{"_id": {"$oid": "507f1f77bcf86cd799439011"}}
+
+// Date
+{"createdAt": {"$date": "2023-01-01T00:00:00Z"}}
+
+// NumberLong
+{"count": {"$numberLong": "1234567890"}}
+```
+
+## Plugin Information
+
+- **Version**: 0.1.0
+- **License**: Apache-2.0
+- **Author**: MongoDB Inc.
+- **Tags**: nosql, document

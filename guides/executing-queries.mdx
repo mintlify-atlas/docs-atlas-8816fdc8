@@ -1,0 +1,221 @@
+---
+title: Executing Queries
+description: Learn how to write, execute, and work with query results in QueryBox
+---
+
+# Executing Queries
+
+QueryBox provides a powerful query editor with syntax highlighting, autocomplete, and multi-tab result management.
+
+## Writing Queries
+
+### Opening the Query Editor
+
+The query editor appears in the main workspace area. To open a new query tab:
+
+<Steps>
+  <Step title="Select a Connection">
+    Click a connection in the Connections panel to load its database tree.
+  </Step>
+
+  <Step title="Start a New Query">
+    The editor automatically opens when you select a connection. You can also:
+    - Click a table/collection node to run a default `SELECT` query
+    - Right-click a node and choose an action (e.g., "Show Tables", "Describe Table")
+  </Step>
+</Steps>
+
+### Editor Features
+
+The QueryBox editor is powered by Monaco Editor (the same engine as VS Code) with database-specific enhancements:
+
+- **Syntax Highlighting** - Keywords, strings, and identifiers are color-coded
+- **Autocomplete** - Press `Ctrl+Space` (or start typing) to see suggestions:
+  - SQL keywords (`SELECT`, `FROM`, `WHERE`, etc.)
+  - Table names from your database schema
+  - Column names (type `tablename.` to trigger)
+  - Database and schema names
+- **Multi-line Editing** - Write complex queries with proper indentation
+- **Word Wrap** - Long queries wrap automatically for readability
+
+<Tip>
+  Autocomplete suggestions load after QueryBox fetches your connection's schema tree. If suggestions don't appear immediately, wait a moment for the tree to populate.
+</Tip>
+
+## Running Queries
+
+### Execute with Keyboard Shortcut
+
+Press **Cmd+Enter** (macOS) or **Ctrl+Enter** (Windows/Linux) to execute the current query.
+
+### Execute from Tree Actions
+
+Click a database object in the tree to run its default action:
+
+- **Tables/Views** - Automatically runs `SELECT * FROM table LIMIT 100`
+- **Collections** (MongoDB-style) - Fetches documents
+- **Keys** (Redis) - Retrieves key values
+
+### Action Buttons
+
+Nodes in the connection tree may display action buttons on hover:
+
+- **Select** - Query all rows/documents
+- **Describe** - Show table structure
+- **Drop** - Delete the object (with confirmation)
+
+Click an action button to execute it immediately.
+
+## Query Results
+
+### Result Tabs
+
+Each query opens a result tab in the workspace. Tabs display:
+
+- **Title** - Table name or query description
+- **Status Indicator** - Loading spinner or error badge
+- **Timestamp** - When the query was executed
+
+Multiple tabs can be open simultaneously for comparison.
+
+### Result Formats
+
+QueryBox adapts the result viewer based on your database type:
+
+<Tabs>
+  <Tab title="SQL (Relational)">
+    Results appear in a data grid with:
+    - **Column Headers** - Sortable and resizable
+    - **Row Numbers** - For easy reference
+    - **Pagination Controls** - If your query returns many rows
+    
+    The grid displays the first 100 rows by default (queries without a `LIMIT` clause automatically append `LIMIT 100`).
+  </Tab>
+  
+  <Tab title="Document Store">
+    Results display as formatted JSON documents:
+    - **Expandable Objects** - Click to drill into nested structures
+    - **Array Indices** - Numbered list items
+    - **Syntax Highlighting** - Color-coded keys and values
+  </Tab>
+  
+  <Tab title="Key-Value">
+    Results show as key-value pairs:
+    - **Key** - Left column
+    - **Value** - Right column (may be JSON, string, or binary)
+    
+    Raw text output (e.g., from `INFO` commands) displays in the value column.
+  </Tab>
+</Tabs>
+
+### Handling Errors
+
+If a query fails, the result tab displays:
+
+- **Error Icon** - Red badge on the tab
+- **Error Message** - Full error text from the database
+- **Query Context** - The query that caused the error
+
+Common errors include syntax mistakes, permission issues, or non-existent tables.
+
+## Advanced Query Features
+
+### EXPLAIN Queries
+
+For databases that support query planning (PostgreSQL, MySQL, SQLite):
+
+<Steps>
+  <Step title="Execute a Query">
+    Run any `SELECT` query to see results.
+  </Step>
+
+  <Step title="Click the Explain Button">
+    If the database plugin advertises `explain-query` capability, an **Explain** button appears in the result toolbar.
+  </Step>
+
+  <Step title="View Query Plan">
+    QueryBox re-executes your query with `EXPLAIN` prepended and opens a new tab showing the execution plan.
+    
+    This helps diagnose slow queries and optimize indexes.
+  </Step>
+</Steps>
+
+<Note>
+  The Explain button only appears for plugins that support it. Check the plugin documentation for availability.
+</Note>
+
+### Refreshing Results
+
+Click the **Refresh** icon in a result tab toolbar to re-run the same query with current data. This is useful for:
+
+- Monitoring changes in real-time
+- Verifying that an `UPDATE` or `DELETE` took effect
+- Re-fetching after another tool modified the database
+
+### Context-Aware Queries
+
+When you run a query from a tree node, QueryBox automatically sets the database context:
+
+- Clicking `production.users` table sets `database: "production"`
+- Your query runs against the correct database without needing `USE` statements
+
+## Multi-Tab Workflow
+
+### Opening Multiple Queries
+
+- Each tree action or manual query opens a new tab
+- Tabs persist until you close them
+- Switch between tabs by clicking their titles
+
+### Comparing Results
+
+Open multiple queries side-by-side:
+
+1. Run a query in one tab
+2. Click another table or write a new query
+3. Compare results across tabs
+
+This is helpful for checking data consistency or testing query variations.
+
+### Closing Tabs
+
+Hover over a tab and click the **×** icon to close it. There's no "unsaved changes" warning since tabs are ephemeral.
+
+## Query Types by Database
+
+<Tabs>
+  <Tab title="PostgreSQL / MySQL">
+    - `SELECT`, `INSERT`, `UPDATE`, `DELETE`
+    - `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`
+    - `CREATE INDEX`, `DROP INDEX`
+    - `BEGIN`, `COMMIT`, `ROLLBACK` (transactions)
+    - `EXPLAIN` (query planning)
+  </Tab>
+  
+  <Tab title="SQLite">
+    - All standard SQL commands
+    - `PRAGMA` statements for database configuration
+    - `ATTACH DATABASE` for multi-file queries
+  </Tab>
+  
+  <Tab title="Redis">
+    - `GET`, `SET`, `DEL`
+    - `HGETALL`, `LRANGE`, `SMEMBERS`
+    - `INFO`, `CONFIG GET`
+    - All Redis commands supported by the plugin
+  </Tab>
+  
+  <Tab title="ArangoDB">
+    - AQL queries (ArangoDB Query Language)
+    - Document CRUD operations
+    - Graph traversals
+  </Tab>
+</Tabs>
+
+## Tips
+
+- **Keyboard Shortcut**: Memorize `Cmd/Ctrl+Enter` for fast query execution
+- **Limit Rows**: Always include a `LIMIT` clause on production databases to avoid overwhelming results
+- **Autocomplete**: Type `database.table.` to see column suggestions
+- **Error Logs**: Check the Logs panel (bottom toolbar) for detailed error messages
+- **Plugin Capabilities**: Some features (like Explain) depend on plugin support; see the Plugins window for details

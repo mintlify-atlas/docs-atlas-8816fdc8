@@ -1,0 +1,358 @@
+---
+title: Authentication Forms
+description: Creating custom authentication forms for QueryBox plugins
+---
+
+## Overview
+
+Authentication forms allow plugins to collect structured connection credentials through a user-friendly interface. Instead of a single DSN text field, plugins can define multiple forms with typed fields (text, password, number, select, checkbox, file path).
+
+Auth forms are returned by the `authforms` command and rendered as tabbed interfaces in the QueryBox connection dialog.
+
+## AuthForms Response Structure
+
+```go
+type AuthFormsResponse struct {
+    Forms map[string]*AuthForm  // Form key → form definition
+}
+
+type AuthForm struct {
+    Key    string       // Unique identifier (e.g., "basic", "url")
+    Name   string       // Display name shown in tab
+    Fields []*AuthField // Form fields
+}
+
+type AuthField struct {
+    Type        AuthFieldType  // Field type (TEXT, PASSWORD, etc.)
+    Name        string         // Field key for JSON serialization
+    Label       string         // Display label
+    Required    bool           // Whether field is required
+    Placeholder string         // Placeholder text
+    Value       string         // Default value
+    Options     []string       // Options for SELECT fields
+}
+```
+
+## Field Types
+
+QueryBox supports six field types, exported as constants in `pkg/plugin/plugin.go:97-102`:
+
+```go
+const (
+    AuthFieldText     = pluginpb.PluginV1_AuthField_TEXT
+    AuthFieldNumber   = pluginpb.PluginV1_AuthField_NUMBER
+    AuthFieldPassword = pluginpb.PluginV1_AuthField_PASSWORD
+    AuthFieldSelect   = pluginpb.PluginV1_AuthField_SELECT
+    AuthFieldCheckbox = pluginpb.PluginV1_AuthField_CHECKBOX
+    AuthFieldFilePath = pluginpb.PluginV1_AuthField_FILE_PATH
+)
+```
+
+### Field Type Reference
+
+| Type | Constant | Input Type | Use Case |
+|------|----------|------------|----------|
+| Text | `AuthFieldText` | Single-line text | Host, username, database name |
+| Number | `AuthFieldNumber` | Numeric input | Port numbers |
+| Password | `AuthFieldPassword` | Masked text | Passwords, API keys |
+| Select | `AuthFieldSelect` | Dropdown | TLS modes, regions, protocols |
+| Checkbox | `AuthFieldCheckbox` | Boolean | Enable TLS, SSL verify |
+| File Path | `AuthFieldFilePath` | File picker | Local database files, certificates |
+
+## Basic Example
+
+From `plugins/template/main.go:53-60`:
+
+```go
+func (t *templatePlugin) AuthForms(ctx context.Context, _ *plugin.AuthFormsRequest) (*plugin.AuthFormsResponse, error) {
+    basic := plugin.AuthForm{
+        Key:  "basic",
+        Name: "Basic",
+        Fields: []*plugin.AuthField{
+            {Type: plugin.AuthFieldText, Name: "host", Label: "Host", Required: true, Placeholder: "127.0.0.1"},
+            {Type: plugin.AuthFieldText, Name: "user", Label: "User"},
+            {Type: plugin.AuthFieldPassword, Name: "password", Label: "Password"},
+        },
+    }
+    return &plugin.AuthFormsResponse{Forms: map[string]*plugin.AuthForm{"basic": &basic}}, nil
+}
+```
+
+## Multiple Forms
+
+Plugins can provide multiple authentication methods. Each form appears as a separate tab in the UI.
+
+### Example: MySQL (Basic + DSN)
+
+From `plugins/mysql/main.go:39-64`:
+
+```go
+func (m *mysqlPlugin) AuthForms(ctx context.Context, _ *plugin.AuthFormsRequest) (*plugin.AuthFormsResponse, error) {
+    basic := plugin.AuthForm{
+        Key:  "basic",
+        Name: "Basic",
+        Fields: []*plugin.AuthField{
+            {Type: plugin.AuthFieldText, Name: "host", Label: "Host", Required: true, Placeholder: "127.0.0.1", Value: "127.0.0.1"},
+            {Type: plugin.AuthFieldNumber, Name: "port", Label: "Port", Placeholder: "3306", Value: "3306"},
+            {Type: plugin.AuthFieldText, Name: "user", Label: "User", Value: "root"},
+            {Type: plugin.AuthFieldPassword, Name: "password", Label: "Password"},
+            {Type: plugin.AuthFieldText, Name: "database", Label: "Database name"},
+            {Type: plugin.AuthFieldSelect, Name: "tls", Label: "TLS mode", Options: []string{"skip-verify", "true", "false", "preferred"}, Value: "skip-verify"},
+            {Type: plugin.AuthFieldText, Name: "params", Label: "Extra params", Placeholder: "charset=utf8&parseTime=true"},
+        },
+    }
+
+    dsn := plugin.AuthForm{
+        Key:  "dsn",
+        Name: "DSN",
+        Fields: []*plugin.AuthField{
+            {Type: plugin.AuthFieldText, Name: "dsn", Label: "DSN", Placeholder: "user:pass@tcp(host:port)/dbname"},
+        },
+    }
+    return &plugin.AuthFormsResponse{Forms: map[string]*plugin.AuthForm{"basic": &basic, "dsn": &dsn}}, nil
+}
+```
+
+### Example: Redis (Basic + URL)
+
+From `plugins/redis/main.go:40-60`:
+
+```go
+func (r *redisPlugin) AuthForms(ctx context.Context, _ *plugin.AuthFormsRequest) (*plugin.AuthFormsResponse, error) {
+    basic := plugin.AuthForm{
+        Key:  "basic",
+        Name: "Basic",
+        Fields: []*plugin.AuthField{
+            {Type: plugin.AuthFieldText, Name: "host", Label: "Host", Required: true, Placeholder: "127.0.0.1", Value: "127.0.0.1"},
+            {Type: plugin.AuthFieldNumber, Name: "port", Label: "Port", Placeholder: "6379", Value: "6379"},
+            {Type: plugin.AuthFieldPassword, Name: "password", Label: "Password"},
+            {Type: plugin.AuthFieldNumber, Name: "db", Label: "Database index", Placeholder: "0", Value: "0"},
+            {Type: plugin.AuthFieldSelect, Name: "tls", Label: "TLS", Options: []string{"false", "true"}, Value: "false"},
+        },
+    }
+    url := plugin.AuthForm{
+        Key:  "url",
+        Name: "URL",
+        Fields: []*plugin.AuthField{
+            {Type: plugin.AuthFieldText, Name: "url", Label: "Redis URL", Required: true, Placeholder: "redis://:password@localhost:6379/0"},
+        },
+    }
+    return &plugin.AuthFormsResponse{Forms: map[string]*plugin.AuthForm{"basic": &basic, "url": &url}}, nil
+}
+```
+
+## Advanced Field Types
+
+### Select Dropdowns
+
+Provide a list of predefined options:
+
+```go
+{
+    Type:    plugin.AuthFieldSelect,
+    Name:    "region",
+    Label:   "Region",
+    Options: []string{"us-east-1", "us-west-2", "eu-west-1"},
+    Value:   "us-east-1",  // Default selection
+}
+```
+
+### Checkboxes
+
+Boolean toggles (stored as "true" or "false" strings):
+
+```go
+{
+    Type:  plugin.AuthFieldCheckbox,
+    Name:  "ssl_verify",
+    Label: "Verify SSL certificate",
+    Value: "true",  // Default checked
+}
+```
+
+### File Path Picker
+
+For local database files or certificates:
+
+```go
+{
+    Type:        plugin.AuthFieldFilePath,
+    Name:        "db_path",
+    Label:       "Database file",
+    Placeholder: "/path/to/database.db",
+    Required:    true,
+}
+```
+
+## Processing Form Data
+
+When a user submits a form, QueryBox serializes the values as JSON and stores them in the `credential_blob` field of the connection map:
+
+```json
+{
+  "form": "basic",
+  "values": {
+    "host": "localhost",
+    "port": "3306",
+    "user": "root",
+    "password": "secret",
+    "database": "mydb",
+    "tls": "skip-verify"
+  }
+}
+```
+
+### Parsing Credential Blob
+
+From `plugins/mysql/main.go:76-144`:
+
+```go
+func buildDSN(connection map[string]string) (string, error) {
+    // Check for legacy DSN key
+    dsn, ok := connection["dsn"]
+    if !ok || dsn == "" {
+        // Parse credential_blob
+        if blob, ok2 := connection["credential_blob"]; ok2 && blob != "" {
+            var payload struct {
+                Form   string            `json:"form"`
+                Values map[string]string `json:"values"`
+            }
+            if err := json.Unmarshal([]byte(blob), &payload); err == nil {
+                // Check if DSN is embedded in values
+                if v, ok := payload.Values["dsn"]; ok && v != "" {
+                    dsn = v
+                } else {
+                    // Build DSN from individual fields
+                    host := payload.Values["host"]
+                    user := payload.Values["user"]
+                    pass := payload.Values["password"]
+                    port := payload.Values["port"]
+                    dbname := payload.Values["database"]
+                    if port == "" {
+                        port = "3306"
+                    }
+                    if host != "" {
+                        dsn = fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", user, pass, host, port, dbname)
+                    }
+                }
+                // Append extra parameters
+                params := url.Values{}
+                for k, v := range payload.Values {
+                    switch k {
+                    case "host", "user", "password", "port", "database", "dsn":
+                        continue  // Already handled
+                    }
+                    if v != "" {
+                        params.Add(k, v)
+                    }
+                }
+                if len(params) > 0 {
+                    dsn = dsn + "?" + params.Encode()
+                }
+            }
+        }
+    }
+    return dsn, nil
+}
+```
+
+## Best Practices
+
+### Provide Sensible Defaults
+
+Set default values for common fields to reduce user input:
+
+```go
+{Type: plugin.AuthFieldText, Name: "host", Label: "Host", Value: "127.0.0.1"},
+{Type: plugin.AuthFieldNumber, Name: "port", Label: "Port", Value: "5432"},
+```
+
+### Mark Required Fields
+
+Use the `Required` flag to enforce mandatory inputs:
+
+```go
+{Type: plugin.AuthFieldText, Name: "host", Label: "Host", Required: true},
+```
+
+### Use Placeholders as Examples
+
+Help users understand the expected format:
+
+```go
+{Type: plugin.AuthFieldText, Name: "dsn", Label: "DSN", Placeholder: "user:pass@tcp(host:port)/dbname"},
+```
+
+### Offer Multiple Connection Methods
+
+Provide both simple and advanced forms:
+
+- **Basic**: Individual fields for common parameters (easier for beginners)
+- **DSN/URL**: Single connection string (faster for experts)
+
+### Handle Legacy Connections
+
+Support both new credential_blob format and legacy DSN keys:
+
+```go
+dsn, ok := connection["dsn"]
+if !ok || dsn == "" {
+    // Fall back to credential_blob parsing
+}
+```
+
+### Validate Input Early
+
+Use `TestConnection` to validate credentials before saving:
+
+```go
+func (m *mysqlPlugin) TestConnection(ctx context.Context, req *plugin.TestConnectionRequest) (*plugin.TestConnectionResponse, error) {
+    dsn, err := buildDSN(req.Connection)
+    if err != nil || dsn == "" {
+        return &plugin.TestConnectionResponse{Ok: false, Message: "invalid connection parameters"}, nil
+    }
+    db, err := sql.Open("mysql", dsn)
+    if err != nil {
+        return &plugin.TestConnectionResponse{Ok: false, Message: fmt.Sprintf("open error: %v", err)}, nil
+    }
+    defer db.Close()
+    if err := db.Ping(); err != nil {
+        return &plugin.TestConnectionResponse{Ok: false, Message: fmt.Sprintf("ping error: %v", err)}, nil
+    }
+    return &plugin.TestConnectionResponse{Ok: true, Message: "Connection successful"}, nil
+}
+```
+
+## Fallback Behavior
+
+Plugins that do not implement `authforms` fall back to a single text input for a DSN or credential string. To provide a better user experience, always implement `AuthForms` even if you only offer a single simple form.
+
+## Example: MongoDB
+
+From `plugins/mongodb/main.go:43-65`:
+
+```go
+func (m *mongoPlugin) AuthForms(ctx context.Context, _ *plugin.AuthFormsRequest) (*plugin.AuthFormsResponse, error) {
+    basic := plugin.AuthForm{
+        Key:  "basic",
+        Name: "Basic",
+        Fields: []*plugin.AuthField{
+            {Type: plugin.AuthFieldText, Name: "host", Label: "Host", Required: true, Placeholder: "127.0.0.1", Value: "127.0.0.1"},
+            {Type: plugin.AuthFieldNumber, Name: "port", Label: "Port", Placeholder: "27017", Value: "27017"},
+            {Type: plugin.AuthFieldText, Name: "user", Label: "Username"},
+            {Type: plugin.AuthFieldPassword, Name: "password", Label: "Password"},
+            {Type: plugin.AuthFieldText, Name: "database", Label: "Database", Placeholder: "mydb"},
+            {Type: plugin.AuthFieldText, Name: "auth_source", Label: "Auth Source", Placeholder: "admin", Value: "admin"},
+            {Type: plugin.AuthFieldSelect, Name: "tls", Label: "TLS", Options: []string{"false", "true"}, Value: "false"},
+        },
+    }
+    uri := plugin.AuthForm{
+        Key:  "uri",
+        Name: "URI",
+        Fields: []*plugin.AuthField{
+            {Type: plugin.AuthFieldText, Name: "uri", Label: "MongoDB URI", Required: true, Placeholder: "mongodb://user:pass@localhost:27017/mydb"},
+        },
+    }
+    return &plugin.AuthFormsResponse{Forms: map[string]*plugin.AuthForm{"basic": &basic, "uri": &uri}}, nil
+}
+```

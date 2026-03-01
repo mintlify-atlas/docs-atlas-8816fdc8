@@ -1,0 +1,214 @@
+---
+title: "exec Command"
+description: "Executes queries and returns structured results (SQL rows, documents, or key-value pairs)"
+---
+
+## Overview
+
+The `exec` command executes a user query against a data source and returns structured results. Supports SQL databases, document stores, and key-value stores.
+
+## Command Invocation
+
+```bash
+<plugin-binary> exec
+```
+
+**Stdin:** JSON-encoded `ExecRequest` object
+
+**Stdout:** JSON-encoded `ExecResponse` object
+
+**Timeout:** 30 seconds
+
+**Required:** Yes - all driver plugins must implement this command
+
+## Request Parameters
+
+<ParamField name="connection" type="object" required>
+  Plugin-defined key-value map containing connection details. Common keys:
+  - `dsn`: Full connection string (legacy)
+  - `credential_blob`: JSON string with `{"form": "basic", "values": {...}}`
+  - `host`, `port`, `user`, `password`, `database`: Individual connection params
+</ParamField>
+
+<ParamField name="query" type="string" required>
+  The query or command to execute. Format depends on the plugin (SQL, MongoDB query, Redis command, etc.)
+</ParamField>
+
+<ParamField name="options" type="object">
+  Optional execution modifiers. Recognized options:
+  - `"explain-query": "yes"`: Request query execution plan (requires `explain-query` capability)
+  
+  Plugins may define custom options for their own features.
+</ParamField>
+
+## Response Structure
+
+<ResponseField name="result" type="ExecResult">
+  Contains exactly one of: `sql`, `document`, or `kv` payload
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Error message if execution failed. Empty string indicates success.
+</ResponseField>
+
+### ExecResult Payloads
+
+#### SqlResult (for relational databases)
+
+<ResponseField name="result.sql.columns" type="Column[]" required>
+  Array of column metadata objects:
+  - `name` (string, required): Column name
+  - `type` (string, optional): Database type (e.g., "varchar", "int")
+</ResponseField>
+
+<ResponseField name="result.sql.rows" type="Row[]" required>
+  Array of row objects, each containing:
+  - `values` (string[]): Array of string-formatted cell values
+</ResponseField>
+
+#### DocumentResult (for document stores)
+
+<ResponseField name="result.document.documents" type="object[]" required>
+  Array of JSON objects representing documents
+</ResponseField>
+
+#### KeyValueResult (for key-value stores)
+
+<ResponseField name="result.kv.data" type="object" required>
+  String-to-string map of key-value pairs
+</ResponseField>
+
+## Example Implementation
+
+From `plugins/mysql/main.go`:
+
+```go
+func (m *mysqlPlugin) Exec(ctx context.Context, req *plugin.ExecRequest) (*plugin.ExecResponse, error) {
+    // Handle explain-query capability
+    if req.Options != nil {
+        if v, ok := req.Options["explain-query"]; ok && v == "yes" {
+            req.Query = "EXPLAIN " + req.Query
+        }
+    }
+    
+    dsn, err := buildDSN(req.Connection)
+    if err != nil {
+        return &plugin.ExecResponse{Error: fmt.Sprintf("invalid connection: %v", err)}, nil
+    }
+    
+    db, err := sql.Open("mysql", dsn)
+    if err != nil {
+        return &plugin.ExecResponse{Error: fmt.Sprintf("open error: %v", err)}, nil
+    }
+    defer db.Close()
+
+    rows, err := db.Query(req.Query)
+    if err != nil {
+        return &plugin.ExecResponse{Error: fmt.Sprintf("query error: %v", err)}, nil
+    }
+    defer rows.Close()
+
+    cols, err := rows.Columns()
+    if err != nil {
+        return &plugin.ExecResponse{Error: fmt.Sprintf("cols error: %v", err)}, nil
+    }
+
+    // Prepare column metadata
+    colMeta := make([]*plugin.Column, len(cols))
+    for i, c := range cols {
+        colMeta[i] = &plugin.Column{Name: c}
+    }
+
+    var rowResults []*plugin.Row
+    for rows.Next() {
+        vals := make([]interface{}, len(cols))
+        ptrs := make([]interface{}, len(cols))
+        for i := range vals {
+            ptrs[i] = &vals[i]
+        }
+        if err := rows.Scan(ptrs...); err != nil {
+            return &plugin.ExecResponse{Error: fmt.Sprintf("scan error: %v", err)}, nil
+        }
+        strs := make([]string, len(cols))
+        for i, v := range vals {
+            strs[i] = plugin.FormatSQLValue(v)
+        }
+        rowResults = append(rowResults, &plugin.Row{Values: strs})
+    }
+
+    return &plugin.ExecResponse{
+        Result: &plugin.ExecResult{
+            Payload: &pluginpb.PluginV1_ExecResult_Sql{
+                Sql: &plugin.SqlResult{
+                    Columns: colMeta,
+                    Rows:    rowResults,
+                },
+            },
+        },
+    }, nil
+}
+```
+
+## Request Format (stdin)
+
+```json
+{
+  "connection": {
+    "credential_blob": "{\"form\":\"basic\",\"values\":{\"host\":\"127.0.0.1\",\"port\":\"3306\",\"user\":\"root\",\"password\":\"secret\",\"database\":\"mydb\"}}"
+  },
+  "query": "SELECT * FROM users LIMIT 10",
+  "options": {}
+}
+```
+
+## Response Format (stdout)
+
+### SQL Result Example
+
+```json
+{
+  "result": {
+    "sql": {
+      "columns": [
+        {"name": "id", "type": "int"},
+        {"name": "email", "type": "varchar"}
+      ],
+      "rows": [
+        {"values": ["1", "alice@example.com"]},
+        {"values": ["2", "bob@example.com"]}
+      ]
+    }
+  },
+  "error": ""
+}
+```
+
+### Error Response Example
+
+```json
+{
+  "error": "query error: Unknown column 'invalid_field' in 'field list'"
+}
+```
+
+## Value Formatting
+
+Use `plugin.FormatSQLValue()` helper to convert `database/sql` scan results:
+
+- `nil` values → empty string `""`
+- `[]byte` with valid UTF-8 → string conversion
+- `[]byte` with binary data → hex format `"0x...`"
+- Other types → `fmt.Sprintf("%v", value)`
+
+## Error Handling
+
+- Return errors in the `error` field of the response, **not** via stderr or exit code
+- The host displays error messages directly to the user
+- Empty `error` field indicates success
+- The `result` field should be omitted or empty when an error occurs
+
+## Notes
+
+- All row values must be strings - the plugin is responsible for formatting
+- Binary data should be hex-encoded to avoid invalid JSON
+- The host does not parse or interpret query syntax - that's plugin-specific

@@ -1,0 +1,406 @@
+---
+title: Testing Guidelines
+description: How to run and write tests for QueryBox
+---
+
+QueryBox uses Go's built-in testing framework for unit and integration tests.
+
+## Running Tests
+
+### Run All Tests
+
+Execute all tests in the project:
+
+```bash
+go test ./...
+```
+
+### Run Tests with Verbose Output
+
+```bash
+go test -v ./...
+```
+
+### Run Specific Package Tests
+
+```bash
+# Test services
+go test ./services/...
+
+# Test plugins
+go test ./plugins/...
+
+# Test plugin SDK
+go test ./pkg/plugin/...
+```
+
+### Run Individual Test Functions
+
+```bash
+go test ./services -run TestConnectionService_Shutdown
+```
+
+### Run Tests with Coverage
+
+```bash
+go test -cover ./...
+
+# Generate detailed coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
+
+## Test Structure
+
+QueryBox tests are organized alongside the source code:
+
+```
+├── services/
+│   ├── connection.go
+│   ├── connection_test.go          # Connection service tests
+│   ├── credmanager/
+│   │   └── credmanager_test.go     # Credential manager tests
+│   └── pluginmgr/
+│       ├── pluginmgr_test.go       # Cross-platform plugin tests
+│       ├── pluginmgr_windows_test.go      # Windows-specific tests
+│       └── pluginmgr_nonwindows_test.go   # Unix-specific tests
+├── plugins/
+│   ├── mysql/
+│   │   └── mysql_test.go           # MySQL plugin tests
+│   ├── postgresql/
+│   │   └── postgresql_test.go      # PostgreSQL plugin tests
+│   └── ...
+└── pkg/
+    ├── plugin/
+    │   └── plugin_test.go          # Plugin SDK tests
+    └── certs/
+        └── certs_test.go           # Certificate utilities tests
+```
+
+## Writing Tests
+
+### Basic Test Structure
+
+Follow Go's standard test conventions:
+
+```go
+package services
+
+import "testing"
+
+func TestYourFunction(t *testing.T) {
+    // Arrange
+    input := "test input"
+    expected := "expected output"
+    
+    // Act
+    result := YourFunction(input)
+    
+    // Assert
+    if result != expected {
+        t.Errorf("YourFunction(%q) = %q; want %q", input, result, expected)
+    }
+}
+```
+
+### Table-Driven Tests
+
+Use table-driven tests for multiple test cases:
+
+```go
+func TestFormatSQLValue(t *testing.T) {
+    tests := []struct {
+        name  string
+        input interface{}
+        want  string
+    }{
+        {"nil", nil, ""},
+        {"string", "foo", "foo"},
+        {"int", 42, "42"},
+        {"bool", true, "true"},
+        {"float", 3.14, "3.14"},
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            got := FormatSQLValue(tt.input)
+            if got != tt.want {
+                t.Errorf("FormatSQLValue(%v) = %q; want %q", tt.input, got, tt.want)
+            }
+        })
+    }
+}
+```
+
+### Testing with Context
+
+Many QueryBox functions accept `context.Context` for cancellation:
+
+```go
+func TestConnectionService_ListConnections(t *testing.T) {
+    ctx := context.Background()
+    svc := NewConnectionService()
+    
+    connections, err := svc.ListConnections(ctx)
+    if err != nil {
+        t.Fatalf("ListConnections failed: %v", err)
+    }
+    
+    if connections == nil {
+        t.Error("expected non-nil connections slice")
+    }
+}
+```
+
+### Testing Cleanup and Shutdown
+
+Test that resources are properly cleaned up:
+
+```go
+func TestConnectionService_Shutdown(t *testing.T) {
+    svc := NewConnectionService()
+    if !svc.closeable() {
+        t.Skip("database not available, skipping test")
+    }
+
+    // Perform initial operation
+    _, err := svc.ListConnections(context.Background())
+    if err != nil {
+        t.Fatalf("initial ListConnections failed: %v", err)
+    }
+
+    // Shutdown and verify
+    svc.Shutdown()
+    if svc.closeable() {
+        t.Fatal("service should not be closeable after Shutdown")
+    }
+
+    // Verify operations fail after shutdown
+    _, err = svc.ListConnections(context.Background())
+    if err == nil {
+        t.Fatal("expected error after Shutdown, got nil")
+    }
+}
+```
+
+### Mocking Dependencies
+
+Use dependency injection for testability:
+
+```go
+func TestDataDir(t *testing.T) {
+    // Save original function
+    orig := userConfigDirFunc
+    defer func() { userConfigDirFunc = orig }()
+
+    // Mock the function
+    userConfigDirFunc = func() (string, error) {
+        return "/home/alice/.config", nil
+    }
+    
+    want := filepath.Join("/home/alice/.config", "querybox")
+    if got := dataDir(); got != want {
+        t.Errorf("dataDir() = %q; want %q", got, want)
+    }
+}
+```
+
+## Plugin Testing
+
+### Testing Plugin Logic
+
+Plugin tests typically focus on:
+- DSN/connection string parsing
+- Query execution logic
+- Result formatting
+- Error handling
+
+Example from `mysql_test.go`:
+
+```go
+func TestGetDatabaseFromConn(t *testing.T) {
+    makeBlob := func(vals map[string]string) string {
+        payload := struct {
+            Form   string            `json:"form"`
+            Values map[string]string `json:"values"`
+        }{Form: "basic", Values: vals}
+        b, _ := json.Marshal(payload)
+        return string(b)
+    }
+
+    tests := []struct {
+        name   string
+        conn   map[string]string
+        wantDB string
+    }{
+        {"empty", map[string]string{}, ""},
+        {"dsn with name", map[string]string{"dsn": "user:pass@tcp(localhost:3306)/baz"}, "baz"},
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            got := getDatabaseFromConn(tt.conn)
+            if got != tt.wantDB {
+                t.Fatalf("got %q, want %q", got, tt.wantDB)
+            }
+        })
+    }
+}
+```
+
+### Integration Tests
+
+Some plugin tests may require actual database connections. Use environment variables or skip conditions:
+
+```go
+func TestPostgreSQLConnection(t *testing.T) {
+    dsn := os.Getenv("POSTGRES_TEST_DSN")
+    if dsn == "" {
+        t.Skip("POSTGRES_TEST_DSN not set, skipping integration test")
+    }
+    
+    // Test with real database
+}
+```
+
+## Platform-Specific Tests
+
+Use build tags for platform-specific tests:
+
+```go
+//go:build windows
+// +build windows
+
+package pluginmgr
+
+import "testing"
+
+func TestWindowsSpecific(t *testing.T) {
+    // Windows-only test logic
+}
+```
+
+```go
+//go:build !windows
+// +build !windows
+
+package pluginmgr
+
+import "testing"
+
+func TestUnixSpecific(t *testing.T) {
+    // Unix-only test logic
+}
+```
+
+## Testing Best Practices
+
+### 1. Use Descriptive Test Names
+
+```go
+// Good
+func TestConnectionService_Shutdown_ClosesDatabase(t *testing.T) {}
+
+// Bad
+func TestShutdown(t *testing.T) {}
+```
+
+### 2. Test Error Cases
+
+```go
+func TestBuildDSN_InvalidBlob(t *testing.T) {
+    conn := map[string]string{"credential_blob": "invalid json"}
+    _, err := buildDSN(conn)
+    if err == nil {
+        t.Fatal("expected error for invalid credential_blob, got nil")
+    }
+}
+```
+
+### 3. Use t.Helper() for Test Utilities
+
+```go
+func assertNoError(t *testing.T, err error) {
+    t.Helper()
+    if err != nil {
+        t.Fatalf("unexpected error: %v", err)
+    }
+}
+```
+
+### 4. Clean Up Resources
+
+```go
+func TestWithTempFile(t *testing.T) {
+    f, err := os.CreateTemp("", "test")
+    if err != nil {
+        t.Fatal(err)
+    }
+    defer os.Remove(f.Name())
+    defer f.Close()
+    
+    // Test logic
+}
+```
+
+### 5. Skip Unavailable Tests
+
+```go
+func TestRequiresDatabase(t *testing.T) {
+    if !databaseAvailable() {
+        t.Skip("database not available, skipping test")
+    }
+    // Test logic
+}
+```
+
+## Continuous Integration
+
+QueryBox tests should pass in CI environments. Ensure your tests:
+- Don't rely on external services (or skip gracefully)
+- Don't require specific file paths (use `t.TempDir()`)
+- Are platform-agnostic (or use build tags)
+- Complete within reasonable time limits
+
+## Test Coverage Goals
+
+Aim for:
+- **Core services**: 80%+ coverage
+- **Plugin SDK**: 90%+ coverage
+- **Individual plugins**: 70%+ coverage
+- **Critical paths**: 100% coverage (authentication, credential storage, query execution)
+
+## Debugging Tests
+
+### Run with Race Detector
+
+```bash
+go test -race ./...
+```
+
+### Run with Memory Sanitizer
+
+```bash
+go test -msan ./...
+```
+
+### Enable Verbose Logging
+
+```go
+func TestWithLogging(t *testing.T) {
+    t.Logf("Starting test...")
+    // Test logic
+    t.Logf("Test completed")
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Contributing Overview" icon="code" href="/development/overview">
+    Return to the contributing guide
+  </Card>
+  <Card title="Building" icon="hammer" href="/development/building">
+    Learn how to build the application
+  </Card>
+</CardGroup>

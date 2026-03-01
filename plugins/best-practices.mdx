@@ -1,0 +1,626 @@
+---
+title: Best Practices
+description: Security, performance, and development best practices for QueryBox plugins
+---
+
+## Overview
+
+This guide covers best practices for developing secure, performant, and maintainable QueryBox plugins.
+
+## Security
+
+### Never Log Credentials
+
+Avoid logging connection parameters or credentials:
+
+```go
+// ❌ Dangerous - exposes credentials in logs
+fmt.Fprintf(os.Stderr, "Connecting with: %+v\n", req.Connection)
+
+// ✅ Safe - log without sensitive data
+fmt.Fprintf(os.Stderr, "Connecting to %s\n", host)
+```
+
+### Sanitize Query Parameters
+
+When constructing queries from user input, use parameterized queries:
+
+```go
+// ❌ SQL injection risk
+query := fmt.Sprintf("SELECT * FROM users WHERE name = '%s'", userInput)
+
+// ✅ Use parameterized queries
+stmt, err := db.Prepare("SELECT * FROM users WHERE name = ?")
+rows, err := stmt.Query(userInput)
+```
+
+### Validate Connection Parameters
+
+Reject obviously invalid inputs early:
+
+```go
+func buildDSN(connection map[string]string) (string, error) {
+    host := connection["host"]
+    if host == "" {
+        return "", fmt.Errorf("host is required")
+    }
+    // Reject localhost bypass attempts in production
+    if strings.Contains(host, "@") {
+        return "", fmt.Errorf("invalid host format")
+    }
+    // ...
+}
+```
+
+### Use TLS by Default
+
+Enable encrypted connections when possible:
+
+```go
+// MySQL example from plugins/mysql/main.go:69-75
+func init() {
+    // Register TLS config with embedded root certificates
+    if pool, err := certs.RootCertPool(); err == nil {
+        mysql.RegisterTLSConfig("querybox", &tls.Config{RootCAs: pool})
+    }
+}
+
+// Convert generic TLS flags to registered config
+if t := params.Get("tls"); t == "true" || t == "preferred" {
+    params.Set("tls", "querybox")
+}
+```
+
+### Avoid Hardcoded Secrets
+
+Never embed API keys or credentials in plugin code:
+
+```go
+// ❌ Hardcoded secret
+const apiKey = "sk-1234567890abcdef"
+
+// ✅ Accept from connection parameters
+apiKey := connection["api_key"]
+if apiKey == "" {
+    return fmt.Errorf("api_key is required")
+}
+```
+
+### Limit Resource Access
+
+Restrict file system access when using `FILE_PATH` fields:
+
+```go
+// Validate file path is within allowed directories
+dbPath := connection["db_path"]
+absPath, err := filepath.Abs(dbPath)
+if err != nil {
+    return fmt.Errorf("invalid path: %w", err)
+}
+
+// Prevent directory traversal
+if strings.Contains(absPath, "..") {
+    return fmt.Errorf("path traversal not allowed")
+}
+```
+
+## Error Handling
+
+### Return Errors in Response, Not as Go Errors
+
+From `pkg/plugin/plugin.go:137-220`, the CLI protocol expects all results on stdout:
+
+```go
+// ✅ Correct - error in response
+func (p *myPlugin) Exec(ctx context.Context, req *plugin.ExecRequest) (*plugin.ExecResponse, error) {
+    if err := validateQuery(req.Query); err != nil {
+        return &plugin.ExecResponse{
+            Error: fmt.Sprintf("invalid query: %v", err),
+        }, nil  // Always return nil as Go error
+    }
+    // ...
+}
+
+// ❌ Incorrect - breaks protocol
+func (p *myPlugin) Exec(ctx context.Context, req *plugin.ExecRequest) (*plugin.ExecResponse, error) {
+    if err := validateQuery(req.Query); err != nil {
+        return nil, err  // Host cannot parse this
+    }
+}
+```
+
+### Provide Helpful Error Messages
+
+Include actionable information:
+
+```go
+// ❌ Vague
+return &plugin.ExecResponse{Error: "connection failed"}, nil
+
+// ✅ Actionable
+return &plugin.ExecResponse{
+    Error: fmt.Sprintf("connection failed: %v. Check host and port are correct", err),
+}, nil
+```
+
+### Close Resources Properly
+
+Always use `defer` to close connections:
+
+```go
+func (p *myPlugin) Exec(ctx context.Context, req *plugin.ExecRequest) (*plugin.ExecResponse, error) {
+    db, err := sql.Open("mysql", dsn)
+    if err != nil {
+        return &plugin.ExecResponse{Error: fmt.Sprintf("open error: %v", err)}, nil
+    }
+    defer db.Close()  // ✅ Always close
+
+    rows, err := db.Query(req.Query)
+    if err != nil {
+        return &plugin.ExecResponse{Error: fmt.Sprintf("query error: %v", err)}, nil
+    }
+    defer rows.Close()  // ✅ Close result set
+    // ...
+}
+```
+
+## Performance
+
+### Respect Context Deadlines
+
+From `docs/features/02-plugin-system.md:14-21`, commands have timeouts:
+
+| Command | Timeout |
+|---------|--------|
+| `info` | 2s |
+| `exec` | 30s |
+| `authforms` | 30s |
+| `connection-tree` | 30s |
+| `test-connection` | 15s |
+
+Respect the provided context:
+
+```go
+func (p *myPlugin) Exec(ctx context.Context, req *plugin.ExecRequest) (*plugin.ExecResponse, error) {
+    // ✅ Pass context to database operations
+    rows, err := db.QueryContext(ctx, req.Query)
+    if err != nil {
+        return &plugin.ExecResponse{Error: fmt.Sprintf("query error: %v", err)}, nil
+    }
+    // ...
+}
+```
+
+### Limit Result Set Size
+
+Prevent memory exhaustion from large queries:
+
+```go
+// Add LIMIT clause if missing
+query := req.Query
+if !strings.Contains(strings.ToUpper(query), "LIMIT") {
+    query = query + " LIMIT 10000"
+}
+```
+
+Or stream results instead of buffering:
+
+```go
+var rowResults []*plugin.Row
+for rows.Next() {
+    if len(rowResults) >= 10000 {
+        break  // Stop after reasonable limit
+    }
+    // ... scan row ...
+    rowResults = append(rowResults, row)
+}
+```
+
+### Reuse Connection Pools
+
+For plugins that maintain state (not recommended for the current stateless model), reuse connections:
+
+```go
+// Not applicable to current stateless plugin model,
+// but useful if QueryBox adds persistent plugin processes in the future
+var dbPool *sql.DB
+
+func getDB(dsn string) (*sql.DB, error) {
+    if dbPool == nil {
+        var err error
+        dbPool, err = sql.Open("mysql", dsn)
+        if err != nil {
+            return nil, err
+        }
+        dbPool.SetMaxOpenConns(10)
+    }
+    return dbPool, nil
+}
+```
+
+**Note**: The current plugin model spawns one process per request, so connection pooling has no effect. This may change in future versions.
+
+### Avoid Expensive Operations in Info
+
+The `info` command has a 2-second timeout and is called frequently:
+
+```go
+// ❌ Slow - queries external service
+func (p *myPlugin) Info(ctx context.Context, _ *pluginpb.PluginV1_InfoRequest) (*plugin.InfoResponse, error) {
+    latestVersion := fetchLatestVersionFromGitHub()  // Network call
+    return &plugin.InfoResponse{
+        Version: latestVersion,
+        // ...
+    }, nil
+}
+
+// ✅ Fast - returns static metadata
+func (p *myPlugin) Info(ctx context.Context, _ *pluginpb.PluginV1_InfoRequest) (*plugin.InfoResponse, error) {
+    return &plugin.InfoResponse{
+        Type:        plugin.TypeDriver,
+        Name:        "myplugin",
+        Version:     "1.0.0",  // Hardcoded at build time
+        Description: "My database driver",
+    }, nil
+}
+```
+
+## Code Quality
+
+### Use the Unimplemented Server Stub
+
+Embed the generated stub for forward compatibility:
+
+```go
+type myPlugin struct {
+    pluginpb.UnimplementedPluginServiceServer  // ✅ Future-proof
+}
+```
+
+This ensures new RPC methods added to the protocol have no-op defaults.
+
+### Implement All Core Methods
+
+From `docs/features/02-plugin-system.md:14-21`, required and optional methods:
+
+**Required**:
+- `Info` - Plugin metadata
+- `Exec` - Query execution
+- `AuthForms` - Connection form definitions
+
+**Optional**:
+- `ConnectionTree` - Database browsing
+- `TestConnection` - Connection validation
+
+Always implement `TestConnection` to improve UX:
+
+```go
+func (p *myPlugin) TestConnection(ctx context.Context, req *plugin.TestConnectionRequest) (*plugin.TestConnectionResponse, error) {
+    // Attempt to connect and ping
+    db, err := sql.Open("driver", buildDSN(req.Connection))
+    if err != nil {
+        return &plugin.TestConnectionResponse{Ok: false, Message: err.Error()}, nil
+    }
+    defer db.Close()
+
+    if err := db.PingContext(ctx); err != nil {
+        return &plugin.TestConnectionResponse{Ok: false, Message: err.Error()}, nil
+    }
+
+    return &plugin.TestConnectionResponse{Ok: true, Message: "Connection successful"}, nil
+}
+```
+
+### Handle Empty Results Gracefully
+
+Always return empty collections, never `nil`:
+
+```go
+// ✅ Return empty array
+if docs == nil {
+    docs = []*structpb.Struct{}
+}
+
+// ✅ Initialize with empty slice
+rows := []*plugin.Row{}
+
+// ❌ Return nil (causes UI issues)
+return &plugin.DocumentResult{Documents: nil}
+```
+
+### Support Explain Query Capability
+
+For SQL plugins, implement the `explain-query` capability:
+
+```go
+func (p *myPlugin) Info(ctx context.Context, _ *pluginpb.PluginV1_InfoRequest) (*plugin.InfoResponse, error) {
+    return &plugin.InfoResponse{
+        // ...
+        Capabilities: []string{"query", "explain-query"},  // ✅ Advertise capability
+    }, nil
+}
+
+func (p *myPlugin) Exec(ctx context.Context, req *plugin.ExecRequest) (*plugin.ExecResponse, error) {
+    query := req.Query
+
+    // ✅ Handle explain-query option
+    if req.Options != nil {
+        if v, ok := req.Options["explain-query"]; ok && v == "yes" {
+            query = "EXPLAIN " + query
+        }
+    }
+
+    // ... execute query ...
+}
+```
+
+## Testing
+
+### Write Unit Tests
+
+Test core functionality without external dependencies:
+
+```go
+func TestFormatSQLValue(t *testing.T) {
+    tests := []struct {
+        input    interface{}
+        expected string
+    }{
+        {nil, ""},
+        {"hello", "hello"},
+        {[]byte("world"), "world"},
+        {[]byte{0xDE, 0xAD, 0xBE, 0xEF}, "0xdeadbeef"},
+        {42, "42"},
+    }
+
+    for _, tt := range tests {
+        result := plugin.FormatSQLValue(tt.input)
+        if result != tt.expected {
+            t.Errorf("FormatSQLValue(%v) = %q, want %q", tt.input, result, tt.expected)
+        }
+    }
+}
+```
+
+### Test with Real Databases
+
+Use Docker for integration tests:
+
+```go
+func TestMySQLExec(t *testing.T) {
+    // Skip if MySQL not available
+    if testing.Short() {
+        t.Skip("skipping integration test")
+    }
+
+    // Assumes docker-compose with MySQL running
+    p := &mysqlPlugin{}
+    resp, err := p.Exec(context.Background(), &plugin.ExecRequest{
+        Connection: map[string]string{"dsn": "root@tcp(localhost:3306)/test"},
+        Query:      "SELECT 1 AS num",
+    })
+
+    if err != nil {
+        t.Fatalf("Exec failed: %v", err)
+    }
+    if resp.Error != "" {
+        t.Fatalf("Exec returned error: %s", resp.Error)
+    }
+    // ... validate result ...
+}
+```
+
+Run integration tests:
+
+```bash
+go test ./... -short          # Skip integration tests
+go test ./...                 # Run all tests
+```
+
+### Test CLI Protocol
+
+Test the stdin/stdout protocol:
+
+```bash
+# Test info command
+./bin/plugins/myplugin info | jq .
+
+# Test exec command
+echo '{"connection":{"dsn":"test"}, "query":"SELECT 1"}' | \
+  ./bin/plugins/myplugin exec | jq .
+
+# Test authforms command
+./bin/plugins/myplugin authforms | jq '.forms'
+```
+
+## Documentation
+
+### Document Connection Parameters
+
+Include examples in auth form placeholders:
+
+```go
+{
+    Type:        plugin.AuthFieldText,
+    Name:        "dsn",
+    Label:       "DSN",
+    Placeholder: "user:pass@tcp(host:port)/dbname",  // ✅ Shows format
+}
+```
+
+### Provide Usage Examples
+
+Include examples in error messages:
+
+```go
+return &plugin.ExecResponse{
+    Error: "unsupported query format\n" +
+        "Examples:\n" +
+        "  db.users.find({})\n" +
+        "  db.users.insertOne({\"name\": \"Alice\"})\n" +
+        "  {\"ping\": 1}",
+}, nil
+```
+
+### Add Plugin Metadata
+
+Provide complete metadata for plugin discovery:
+
+```go
+func (p *myPlugin) Info(ctx context.Context, _ *pluginpb.PluginV1_InfoRequest) (*plugin.InfoResponse, error) {
+    return &plugin.InfoResponse{
+        Type:         plugin.TypeDriver,
+        Name:         "MyDB",
+        Version:      "1.0.0",
+        Description:  "MyDB database driver for QueryBox",
+        Url:          "https://mydb.com",
+        Author:       "MyDB Inc.",
+        License:      "MIT",
+        IconUrl:      "https://mydb.com/icon.png",
+        Capabilities: []string{"query", "explain-query"},
+        Tags:         []string{"nosql", "document"},
+        Contact:      "support@mydb.com",
+    }, nil
+}
+```
+
+## Compatibility
+
+### Support Legacy Connection Formats
+
+Accept both old DSN keys and new credential_blob format:
+
+```go
+func buildDSN(connection map[string]string) (string, error) {
+    // ✅ Support legacy DSN key
+    if dsn, ok := connection["dsn"]; ok && dsn != "" {
+        return dsn, nil
+    }
+
+    // ✅ Support new credential_blob format
+    if blob, ok := connection["credential_blob"]; ok && blob != "" {
+        var payload struct {
+            Form   string            `json:"form"`
+            Values map[string]string `json:"values"`
+        }
+        if err := json.Unmarshal([]byte(blob), &payload); err == nil {
+            return buildDSNFromValues(payload.Values)
+        }
+    }
+
+    return "", fmt.Errorf("missing connection parameters")
+}
+```
+
+### Version Your Plugin
+
+Use semantic versioning and maintain a changelog:
+
+```go
+const Version = "1.2.3"
+
+func (p *myPlugin) Info(ctx context.Context, _ *pluginpb.PluginV1_InfoRequest) (*plugin.InfoResponse, error) {
+    return &plugin.InfoResponse{
+        Version: Version,
+        // ...
+    }, nil
+}
+```
+
+## Language-Agnostic Plugins
+
+While the SDK is Go-based, any language can implement the protocol:
+
+### Python Example
+
+```python
+#!/usr/bin/env python3
+import sys
+import json
+
+def handle_info():
+    return {
+        "type": "DRIVER",
+        "name": "myplugin",
+        "version": "1.0.0",
+        "description": "Python-based plugin"
+    }
+
+def handle_exec(req):
+    query = req.get("query", "")
+    return {
+        "result": {
+            "kv": {
+                "data": {"result": f"Executed: {query}"}
+            }
+        }
+    }
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+
+    if cmd == "info":
+        print(json.dumps(handle_info()))
+    elif cmd == "exec":
+        req = json.load(sys.stdin)
+        print(json.dumps(handle_exec(req)))
+    else:
+        print("Usage: myplugin info | exec", file=sys.stderr)
+        sys.exit(2)
+```
+
+Make it executable:
+
+```bash
+chmod +x myplugin
+cp myplugin ~/.config/querybox/plugins/
+```
+
+## Common Pitfalls
+
+### Don't Use Interactive Input
+
+Plugins communicate via stdin/stdout, not TTY:
+
+```go
+// ❌ Will hang - stdin is reserved for requests
+fmt.Println("Enter password:")
+password, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+
+// ✅ Accept password from connection parameters
+password := connection["password"]
+```
+
+### Don't Write to Stdout Except for Responses
+
+```go
+// ❌ Breaks protocol - stdout is for JSON responses only
+fmt.Println("Connecting to database...")
+
+// ✅ Log to stderr instead
+fmt.Fprintln(os.Stderr, "Connecting to database...")
+```
+
+### Don't Assume Plugin Working Directory
+
+```go
+// ❌ Relative path may not work
+data, err := os.ReadFile("config.json")
+
+// ✅ Use absolute paths or embed resources
+//go:embed config.json
+var configData []byte
+```
+
+### Don't Ignore Connection Tree Type Hints
+
+Use appropriate node types for better UI integration:
+
+```go
+// ✅ Use semantic node types
+&plugin.ConnectionTreeNode{
+    Key:      "mydb.users",
+    Label:    "users",
+    NodeType: plugin.ConnectionTreeNodeTypeTable,  // Not generic/empty
+}
+```

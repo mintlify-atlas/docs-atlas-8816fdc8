@@ -1,0 +1,93 @@
+---
+title: Contributing Overview
+description: Guide to contributing to QueryBox development
+---
+
+QueryBox is a database management tool built with a plugin-based architecture. This guide will help you get started with contributing to the project.
+
+## What You Can Contribute
+
+### Core Application
+- Backend services (Go)
+- Frontend UI (Vue 3)
+- Desktop integration (Wails v3)
+- Connection and credential management
+
+### Plugin Development
+- Database driver plugins (MySQL, PostgreSQL, SQLite, MongoDB, Redis, ArangoDB, etc.)
+- New database type support
+- Plugin SDK improvements
+
+### Documentation
+- User guides
+- API documentation
+- Architecture documentation
+
+## Project Structure
+
+```
+├── main.go                     # Application entry point
+├── services/                   # Core services (connection, credential, plugin manager)
+├── pkg/plugin/                 # Plugin SDK — ServeCLI helper and type aliases
+├── plugins/                    # Plugin source code
+│   ├── mysql/
+│   ├── postgresql/
+│   ├── sqlite/
+│   └── template/               # Starting point for new plugins
+├── contracts/plugin/v1/        # Protobuf definitions
+├── rpc/contracts/plugin/v1/    # Generated Go code (pluginpb)
+├── frontend/                   # Vue 3 frontend
+├── docs/                       # Design and architecture documentation
+├── scripts/                    # Build helper scripts
+└── build/                      # Platform-specific build configuration
+```
+
+## Development Prerequisites
+
+| Tool | Version | Purpose |
+|------|---------|---------|  
+| [Go](https://go.dev/dl/) | 1.24+ | Backend |
+| [Wails v3](https://v3alpha.wails.io/getting-started/installation/) | v3 alpha | Desktop framework |
+| [Task](https://taskfile.dev/installation/) | latest | Build automation |
+| [Node.js](https://nodejs.org/) | 18+ | Frontend tooling |
+| [protoc](https://grpc.io/docs/protoc-installation/) + [protoc-gen-go](https://pkg.go.dev/google.golang.org/protobuf/cmd/protoc-gen-go) + [protoc-gen-go-grpc](https://pkg.go.dev/google.golang.org/grpc/cmd/protoc-gen-go-grpc) | libprotoc 29.6 / protoc-gen-go v1.36.10 / protoc-gen-go-grpc v1.6.1 | gRPC code generation (only if modifying `.proto` files) |
+
+## Getting Started
+
+Follow the [setup guide](/development/setup) to configure your development environment, then refer to the [building guide](/development/building) to learn how to build the application and plugins.
+
+## Development Workflow
+
+1. **Build plugins** - Compile all database plugins
+2. **Start dev mode** - Run `wails3 dev` for hot-reload
+3. **Make changes** - Frontend and backend changes reload automatically
+4. **Test** - Run unit tests with `go test`
+5. **Build** - Create production builds with `wails3 build`
+
+## Plugin Architecture
+
+Plugins are standalone executables that communicate with the host application via gRPC. Each plugin implements four core commands:
+
+- `info` - Return plugin metadata (name, version, type)
+- `authforms` - Return auth form definitions for the UI
+- `exec` - Execute a query and return results
+- `connection-tree` - Return a browsable object hierarchy
+
+Plugins live in `bin/plugins/` and are automatically discovered by the application. At startup, the app copies bundled plugins to the per-user config directory, allowing both bundled and user-added plugins.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Setup Environment" icon="download" href="/development/setup">
+    Install dependencies and clone the repository
+  </Card>
+  <Card title="Building" icon="hammer" href="/development/building">
+    Learn how to build the app and plugins
+  </Card>
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Run and write tests for your contributions
+  </Card>
+  <Card title="Plugin System" icon="plug" href="/features/plugin-system">
+    Learn about the plugin architecture
+  </Card>
+</CardGroup>

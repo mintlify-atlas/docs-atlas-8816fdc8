@@ -1,0 +1,171 @@
+---
+title: Development Environment Setup
+description: Set up your development environment for QueryBox
+---
+
+This guide walks you through setting up a development environment for QueryBox.
+
+## Install Dependencies
+
+### Required Tools
+
+Install the following tools before getting started:
+
+#### Task (Build Tool)
+
+```bash
+# Using Go
+go install github.com/go-task/task/v3/cmd/task@latest
+
+# Or using npm
+npm install -g taskfile
+```
+
+#### Wails CLI
+
+```bash
+go install github.com/wailsapp/wails/v3/cmd/wails@latest
+```
+
+#### Protobuf Tools (Optional)
+
+Only needed if you plan to modify `.proto` files:
+
+```bash
+# Install protoc-gen-go
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
+
+# Install protoc-gen-go-grpc
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
+
+# Install protoc (see https://grpc.io/docs/protoc-installation/)
+```
+
+### Verify Installation
+
+Check that all tools are properly installed:
+
+```bash
+# Check Go version (should be 1.24+)
+go version
+
+# Check Task
+task --version
+
+# Check Wails
+wails version
+
+# Check Node.js (should be 18+)
+node --version
+```
+
+## Clone the Repository
+
+Clone the QueryBox repository to your local machine:
+
+```bash
+git clone https://github.com/your-username/querybox.git
+cd querybox
+```
+
+## Install Go Dependencies
+
+Go dependencies are managed via Go modules and will be automatically downloaded when you build or run the project:
+
+```bash
+go mod download
+```
+
+## Install Frontend Dependencies
+
+The frontend dependencies are managed by the Wails build system and will be installed automatically on first build.
+
+## Verify Setup
+
+Verify your development environment is properly configured:
+
+```bash
+# Build all plugins
+task build:plugins
+
+# Start the development server
+wails3 dev
+```
+
+If everything is set up correctly, the QueryBox application should launch with hot-reload enabled.
+
+## Platform-Specific Notes
+
+### Linux
+
+On Linux, ensure you have a Secret Service provider running for credential storage:
+
+- GNOME Keyring (GNOME desktop)
+- KWallet (KDE desktop)
+
+Without a keyring service, credentials will fall back to SQLite storage in `data/credentials.db`.
+
+### macOS
+
+No additional setup required. QueryBox uses the macOS Keychain for credential storage.
+
+### Windows
+
+No additional setup required. QueryBox uses the Windows Credential Manager.
+
+## Plugin Directory
+
+Plugins are stored in the following locations:
+
+- **Bundled**: `bin/plugins/` (in the repository)
+- **User directory**:
+  - Linux: `$XDG_CONFIG_HOME/querybox/plugins`
+  - macOS: `~/Library/Application Support/querybox/plugins`
+  - Windows: `%APPDATA%\querybox\plugins`
+
+The user directory takes precedence, allowing you to override bundled plugins or add custom ones.
+
+## Troubleshooting
+
+### "wails3: command not found"
+
+Ensure your `$GOPATH/bin` is in your `$PATH`:
+
+```bash
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+Add this to your shell profile (`.bashrc`, `.zshrc`, etc.) to make it permanent.
+
+### Plugin Build Fails
+
+If plugin builds fail, check that:
+
+1. Go 1.24+ is installed
+2. You're in the project root directory
+3. The `bin/plugins/` directory exists (created automatically by Task)
+
+### Frontend Build Errors
+
+If you encounter frontend build errors:
+
+1. Ensure Node.js 18+ is installed
+2. Try clearing the build cache:
+   ```bash
+   rm -rf frontend/node_modules
+   rm -rf frontend/dist
+   ```
+3. Rebuild with `wails3 dev`
+
+## Next Steps
+
+Now that your environment is set up, learn how to:
+
+<CardGroup cols={2}>
+  <Card title="Building" icon="hammer" href="/development/building">
+    Build the application and plugins
+  </Card>
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Run and write tests
+  </Card>
+</CardGroup>

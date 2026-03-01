@@ -1,0 +1,150 @@
+---
+title: SQLite
+description: Connect to SQLite databases with QueryBox
+---
+
+QueryBox supports SQLite databases through a native driver plugin. Connect to local SQLite database files or cloud-hosted databases like Turso.
+
+## Connection Methods
+
+<Tabs>
+  <Tab title="Basic (Local File)">
+    Connect to a local SQLite database file:
+
+    <ParamField path="file" type="string" required>
+      Path to the SQLite database file
+      
+      Example: `/path/to/database.db`
+    </ParamField>
+
+    ### Example
+    ```
+    /Users/username/projects/myapp/database.db
+    ```
+  </Tab>
+
+  <Tab title="Turso Cloud">
+    Connect to a Turso cloud-hosted SQLite database:
+
+    <ParamField path="database_url" type="string" required>
+      Turso database URL
+      
+      Format: `libsql://example.aws-region.turso.io`
+    </ParamField>
+
+    <ParamField path="token" type="string" required>
+      Turso authentication token
+    </ParamField>
+
+    ### Example
+    ```
+    Database URL: libsql://my-db.us-east-1.turso.io
+    Auth Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+    ```
+
+    <Warning>
+      The Turso Cloud connection form is not available on Windows as the libsql driver does not support Windows yet.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Connection String Examples
+
+### Relative Path
+```
+./data/app.db
+```
+
+### Absolute Path
+```
+/var/lib/myapp/database.sqlite3
+```
+
+### In-Memory Database
+```
+:memory:
+```
+
+### Turso with Authentication
+```
+libsql://example.turso.io?authToken=your-token-here
+```
+
+## Supported Features
+
+<CardGroup cols={2}>
+  <Card title="SQL Queries" icon="database">
+    Execute SELECT, INSERT, UPDATE, DELETE statements
+  </Card>
+  
+  <Card title="Query Explanation" icon="magnifying-glass">
+    Analyze query execution plans with EXPLAIN
+  </Card>
+  
+  <Card title="Table Browser" icon="folder-tree">
+    Browse all tables in the database
+  </Card>
+  
+  <Card title="DDL Operations" icon="wrench">
+    Create and drop tables
+  </Card>
+</CardGroup>
+
+## Capabilities
+
+- **Query Execution**: Run SELECT queries and view results in table format
+- **DDL Support**: Execute CREATE, DROP, ALTER statements
+- **DML Support**: INSERT, UPDATE, DELETE operations
+- **Explain Query**: Analyze query execution plans
+- **Connection Tree**: Browse all tables with quick-access actions
+- **PRAGMA Support**: Execute SQLite PRAGMA statements
+- **Cloud Support**: Connect to Turso cloud databases (non-Windows only)
+
+## Special Query Handling
+
+The SQLite plugin intelligently detects query types:
+
+- **SELECT/WITH/PRAGMA**: Returns result rows
+- **DDL/DML statements**: Executes without returning rows (CREATE, DROP, INSERT, UPDATE, DELETE)
+
+<Info>
+  Non-SELECT statements use `db.Exec()` instead of `db.Query()` to properly handle operations that don't return rows.
+</Info>
+
+## Database Structure
+
+The SQLite plugin displays a flat list of tables:
+
+- **Tables**: All user-created tables (queries `sqlite_master`)
+- **Actions**: Quick SELECT and DROP operations for each table
+
+## Notes
+
+<Tip>
+  SQLite is serverless and file-based, making it perfect for embedded applications, local development, and testing.
+</Tip>
+
+<Warning>
+  Ensure the application has read/write permissions to the database file and its parent directory.
+</Warning>
+
+## Turso Cloud
+
+Turso is a cloud-hosted SQLite platform built on libsql. Benefits include:
+
+- Global replication
+- Edge deployment
+- Built-in authentication
+- Scales to thousands of databases
+
+<Info>
+  Learn more about Turso at [turso.tech](https://turso.tech)
+</Info>
+
+## Plugin Information
+
+- **Version**: 0.1.0
+- **License**: Public Domain
+- **Author**: SQLite Consortium
+- **Tags**: sql, relational
+- **Driver**: modernc.org/sqlite (pure Go implementation)

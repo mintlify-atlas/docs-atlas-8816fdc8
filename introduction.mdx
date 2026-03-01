@@ -1,0 +1,202 @@
+---
+title: Welcome to QueryBox
+description: A lightweight, plugin-based database management tool for executing and managing queries across multiple database systems.
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.svg"
+  alt="QueryBox Hero Light"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.svg"
+  alt="QueryBox Hero Dark"
+/>
+
+## What is QueryBox?
+
+QueryBox is a modern desktop database client that brings a fresh approach to database management. Unlike traditional tools that bundle all database drivers into a monolithic application, QueryBox uses a **plugin-based architecture** where each database protocol is handled by lightweight, standalone executables.
+
+<Note>
+  QueryBox is currently in active development and has not been officially released. Features and capabilities are subject to change.
+</Note>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card
+    title="Plugin-Based Architecture"
+    icon="puzzle-piece"
+    iconType="duotone"
+  >
+    Each database driver runs as a separate, lightweight executable. Add support for new databases without rebuilding the entire application.
+  </Card>
+  <Card
+    title="Multi-Database Support"
+    icon="database"
+    iconType="duotone"
+  >
+    Connect to MySQL, PostgreSQL, SQLite, Redis, ArangoDB, and more. Each plugin provides native support for its specific database features.
+  </Card>
+  <Card
+    title="Secure Credential Management"
+    icon="lock"
+    iconType="duotone"
+  >
+    3-tier credential storage system with OS keyring integration, encrypted SQLite fallback, and secure in-memory storage as a last resort.
+  </Card>
+  <Card
+    title="Interactive Query Execution"
+    icon="terminal"
+    iconType="duotone"
+  >
+    Execute queries with syntax highlighting, view results in multiple formats, and navigate database objects through an interactive tree browser.
+  </Card>
+  <Card
+    title="Built with Wails v3"
+    icon="window"
+    iconType="duotone"
+  >
+    Native desktop performance powered by Wails v3 and Vue 3. Cross-platform support for Windows, macOS, and Linux.
+  </Card>
+  <Card
+    title="Extensible & Language-Agnostic"
+    icon="code"
+    iconType="duotone"
+  >
+    Write plugins in any language. The simple stdin/stdout JSON protocol means you can create database drivers in Go, Python, Rust, or anything else.
+  </Card>
+</CardGroup>
+
+## How It Works
+
+QueryBox takes a unique approach to database connectivity:
+
+<Steps>
+  <Step title="Plugin Discovery">
+    At startup, QueryBox scans the `bin/plugins/` directory and discovers all available database drivers. Each plugin registers itself by responding to an `info` command.
+  </Step>
+  <Step title="Connection Management">
+    When you create a new connection, QueryBox stores metadata in SQLite and delegates credentials to the secure CredManager, which uses your OS keyring when available.
+  </Step>
+  <Step title="Query Execution">
+    When you run a query, QueryBox spawns the appropriate plugin as a subprocess, sends your query via JSON over stdin, and receives structured results via stdout.
+  </Step>
+  <Step title="Process Lifecycle">
+    Each query execution is a fresh process—no persistent connections means better resource management and isolation between queries.
+  </Step>
+</Steps>
+
+## Architecture Overview
+
+QueryBox consists of three main components:
+
+### Core Services (Go)
+
+- **App Service**: Window management and application lifecycle
+- **ConnectionService**: Connection CRUD operations with SQLite persistence
+- **CredManager**: 3-tier secure credential storage (OS keyring → encrypted SQLite → memory)
+- **PluginManager**: Plugin discovery, registry, and on-demand execution
+
+### Plugin System
+
+Plugins are standalone executables that implement a simple command-line interface:
+
+- `info` - Returns plugin metadata (name, version, capabilities)
+- `exec` - Executes a query and returns results
+- `authforms` - Provides structured authentication forms for the UI
+- `connection-tree` - Returns a hierarchical database object tree
+- `test-connection` - Tests connection validity before saving
+
+### Frontend (Vue 3)
+
+Built with Vue 3, Naive UI, and Tailwind CSS, the frontend provides:
+
+- Rich query editor with syntax highlighting
+- Interactive database object browser
+- Multiple result view formats (table, JSON, raw)
+- Connection management UI with tabbed auth forms
+- Plugin management and discovery interface
+
+## Built-in Database Support
+
+QueryBox ships with plugins for the most popular databases:
+
+<AccordionGroup>
+  <Accordion title="MySQL / MariaDB" icon="database">
+    Full support for MySQL and MariaDB with:
+    - TLS/SSL connections
+    - Interactive schema browser
+    - EXPLAIN query analysis
+    - Connection tree navigation (databases → tables → columns)
+  </Accordion>
+  
+  <Accordion title="PostgreSQL" icon="elephant">
+    Complete PostgreSQL driver featuring:
+    - Schema and table browsing
+    - EXPLAIN query support
+    - Full SSL/TLS support
+    - Connection pooling
+  </Accordion>
+  
+  <Accordion title="SQLite" icon="file-code">
+    Dual-mode SQLite support:
+    - Local file databases using modernc.org/sqlite
+    - Turso Cloud remote databases using go-libsql
+    - Interactive table and index browsing
+  </Accordion>
+  
+  <Accordion title="Redis" icon="server">
+    Redis support with:
+    - Basic authentication (host/port/password/db)
+    - URL-based connection strings
+    - Key-value result formatting
+  </Accordion>
+  
+  <Accordion title="ArangoDB" icon="project-diagram">
+    Multi-model database support:
+    - Document store queries
+    - Graph database operations
+    - Basic authentication
+  </Accordion>
+</AccordionGroup>
+
+## Why Choose QueryBox?
+
+<CardGroup cols={1}>
+  <Card title="Lightweight & Fast" icon="bolt">
+    No bloated runtimes or heavy frameworks. Each plugin is a single executable, and queries run in isolated processes with automatic cleanup.
+  </Card>
+  
+  <Card title="Secure by Design" icon="shield-check">
+    Credentials never touch disk in plaintext. OS keyring integration means your passwords are protected by the same security as your system passwords.
+  </Card>
+  
+  <Card title="Developer-Friendly" icon="code">
+    Simple plugin contract means you can add support for any database in an afternoon. No complex SDKs or frameworks required.
+  </Card>
+  
+  <Card title="Cross-Platform" icon="laptop">
+    Built with Wails v3, QueryBox runs natively on Windows, macOS, and Linux with a consistent experience across all platforms.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Installation Guide"
+    icon="download"
+    href="/installation"
+  >
+    Get QueryBox installed on your system
+  </Card>
+  <Card
+    title="Quick Start"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Connect to your first database and run queries
+  </Card>
+</CardGroup>

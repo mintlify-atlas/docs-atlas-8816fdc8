@@ -1,0 +1,131 @@
+---
+title: MySQL
+description: Connect to MySQL databases with QueryBox
+---
+
+QueryBox supports MySQL databases through a native driver plugin. Connect to local or remote MySQL servers using basic authentication or custom connection strings.
+
+## Connection Methods
+
+<Tabs>
+  <Tab title="Basic">
+    Configure your MySQL connection using individual parameters:
+
+    <ParamField path="host" type="string" required>
+      MySQL server hostname or IP address
+      
+      Default: `127.0.0.1`
+    </ParamField>
+
+    <ParamField path="port" type="number">
+      MySQL server port
+      
+      Default: `3306`
+    </ParamField>
+
+    <ParamField path="user" type="string">
+      Database username
+      
+      Default: `root`
+    </ParamField>
+
+    <ParamField path="password" type="string">
+      Database password
+    </ParamField>
+
+    <ParamField path="database" type="string">
+      Database name to connect to
+    </ParamField>
+
+    <ParamField path="tls" type="string">
+      TLS mode for secure connections
+      
+      Options: `skip-verify`, `true`, `false`, `preferred`
+      
+      Default: `skip-verify`
+    </ParamField>
+
+    <ParamField path="params" type="string">
+      Additional connection parameters
+      
+      Example: `charset=utf8&parseTime=true`
+    </ParamField>
+  </Tab>
+
+  <Tab title="DSN">
+    Provide a complete MySQL Data Source Name (DSN) connection string:
+
+    <ParamField path="dsn" type="string" required>
+      Full MySQL DSN connection string
+      
+      Format: `user:password@tcp(host:port)/database`
+    </ParamField>
+
+    ### Example DSN
+    ```
+    root:password@tcp(localhost:3306)/mydb?charset=utf8&parseTime=true
+    ```
+  </Tab>
+</Tabs>
+
+## Connection String Examples
+
+### Local Development
+```
+root:@tcp(127.0.0.1:3306)/mydb
+```
+
+### Remote Server with TLS
+```
+user:pass@tcp(mysql.example.com:3306)/production?tls=true
+```
+
+### Custom Charset and Timezone
+```
+app_user:secret@tcp(10.0.1.5:3306)/app_db?charset=utf8mb4&parseTime=true&loc=UTC
+```
+
+## Supported Features
+
+<CardGroup cols={2}>
+  <Card title="SQL Queries" icon="database">
+    Execute SELECT, INSERT, UPDATE, DELETE statements
+  </Card>
+  
+  <Card title="Query Explanation" icon="magnifying-glass">
+    Analyze query execution plans with EXPLAIN
+  </Card>
+  
+  <Card title="Database Browser" icon="folder-tree">
+    Browse databases, tables, and schemas visually
+  </Card>
+  
+  <Card title="DDL Operations" icon="wrench">
+    Create and drop databases and tables
+  </Card>
+</CardGroup>
+
+## Capabilities
+
+- **Query Execution**: Run arbitrary SQL queries and view results
+- **Explain Query**: Prefix queries with `EXPLAIN` to analyze execution plans
+- **Connection Tree**: Browse all databases and tables with expandable tree view
+- **DDL Actions**: Create/drop databases and tables directly from the UI
+- **TLS Support**: Connect securely using embedded root certificates
+
+## Notes
+
+<Info>
+  The MySQL driver automatically applies a 5-second connection timeout to prevent hanging connections.
+</Info>
+
+<Warning>
+  When using `tls=skip-verify`, certificate validation is bypassed. Use `tls=true` for production environments with valid certificates.
+</Warning>
+
+## Plugin Information
+
+- **Version**: 0.1.0
+- **License**: GPL-2.0
+- **Author**: Oracle
+- **Tags**: sql, relational

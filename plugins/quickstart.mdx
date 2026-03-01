@@ -1,0 +1,339 @@
+---
+title: Create Your First Plugin
+description: Build a custom QueryBox database driver from the template
+---
+
+This guide walks you through creating a minimal QueryBox plugin using the Go SDK. You'll learn how to implement the required commands and test your plugin.
+
+## Prerequisites
+
+- Go 1.21 or later
+- QueryBox source code (for access to `pkg/plugin`)
+- Basic understanding of the database/driver you're integrating
+
+## Template Plugin
+
+QueryBox includes a complete template plugin at `plugins/template/main.go` that demonstrates all required and optional commands.
+
+<Steps>
+
+<Step title="Create plugin directory">
+Create a new directory under `plugins/` for your driver:
+
+```bash
+mkdir -p plugins/mydriver
+cd plugins/mydriver
+```
+</Step>
+
+<Step title="Create main.go">
+Create `main.go` with the basic structure:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/felixdotgo/querybox/pkg/plugin"
+	pluginpb "github.com/felixdotgo/querybox/rpc/contracts/plugin/v1"
+)
+
+// myDriverPlugin implements the protobuf PluginServiceServer interface.
+type myDriverPlugin struct {
+	pluginpb.UnimplementedPluginServiceServer
+}
+
+func main() {
+	plugin.ServeCLI(&myDriverPlugin{})
+}
+```
+
+The `UnimplementedPluginServiceServer` provides default implementations for optional methods.
+</Step>
+
+<Step title="Implement Info command">
+The `Info` command returns metadata about your plugin:
+
+```go
+func (m *myDriverPlugin) Info(ctx context.Context, _ *pluginpb.PluginV1_InfoRequest) (*plugin.InfoResponse, error) {
+	return &plugin.InfoResponse{
+		Type:        plugin.TypeDriver,
+		Name:        "mydriver",
+		Version:     "0.1.0",
+		Description: "My custom database driver",
+		Url:         "https://example.com/mydriver",
+		Author:      "Your Name",
+		Capabilities: []string{"query"},
+		Tags:        []string{"sql", "custom"},
+		License:     "MIT",
+	}, nil
+}
+```
+
+<Info>
+`capabilities` array tells QueryBox what features your plugin supports (e.g., `"explain-query"`, `"transactions"`).
+</Info>
+</Step>
+
+<Step title="Implement AuthForms command">
+Define authentication forms that users fill out to connect:
+
+```go
+func (m *myDriverPlugin) AuthForms(ctx context.Context, _ *plugin.AuthFormsRequest) (*plugin.AuthFormsResponse, error) {
+	basic := plugin.AuthForm{
+		Key:  "basic",
+		Name: "Basic",
+		Fields: []*plugin.AuthField{
+			{Type: plugin.AuthFieldText, Name: "host", Label: "Host", Required: true, Placeholder: "127.0.0.1"},
+			{Type: plugin.AuthFieldNumber, Name: "port", Label: "Port", Placeholder: "5432", Value: "5432"},
+			{Type: plugin.AuthFieldText, Name: "user", Label: "User", Value: "root"},
+			{Type: plugin.AuthFieldPassword, Name: "password", Label: "Password"},
+			{Type: plugin.AuthFieldText, Name: "database", Label: "Database name"},
+		},
+	}
+	return &plugin.AuthFormsResponse{Forms: map[string]*plugin.AuthForm{"basic": &basic}}, nil
+}
+```
+
+**Available field types:**
+- `AuthFieldText` - Text input
+- `AuthFieldNumber` - Numeric input
+- `AuthFieldPassword` - Password input (masked)
+- `AuthFieldSelect` - Dropdown select
+- `AuthFieldCheckbox` - Boolean checkbox
+- `AuthFieldFilePath` - File picker
+</Step>
+
+<Step title="Implement Exec command">
+The `Exec` command executes queries and returns results. Here's a simple key-value example:
+
+```go
+func (m *myDriverPlugin) Exec(ctx context.Context, req *plugin.ExecRequest) (*plugin.ExecResponse, error) {
+	// Example: return query as key-value for demonstration
+	data := map[string]string{
+		"query": req.Query,
+		"host":  req.Connection["host"],
+	}
+
+	return &plugin.ExecResponse{
+		Result: &plugin.ExecResult{
+			Payload: &pluginpb.PluginV1_ExecResult_Kv{
+				Kv: &plugin.KeyValueResult{
+					Data: data,
+				},
+			},
+		},
+	}, nil
+}
+```
+
+For SQL databases, return `SqlResult` instead:
+
+```go
+func (m *myDriverPlugin) Exec(ctx context.Context, req *plugin.ExecRequest) (*plugin.ExecResponse, error) {
+	// Connect to your database using req.Connection
+	dsn := buildDSN(req.Connection)
+	db, err := sql.Open("yourdriver", dsn)
+	if err != nil {
+		return &plugin.ExecResponse{Error: fmt.Sprintf("connection error: %v", err)}, nil
+	}
+	defer db.Close()
+
+	// Execute query
+	rows, err := db.Query(req.Query)
+	if err != nil {
+		return &plugin.ExecResponse{Error: fmt.Sprintf("query error: %v", err)}, nil
+	}
+	defer rows.Close()
+
+	// Get column names
+	cols, _ := rows.Columns()
+	colMeta := make([]*plugin.Column, len(cols))
+	for i, c := range cols {
+		colMeta[i] = &plugin.Column{Name: c}
+	}
+
+	// Scan rows
+	var rowResults []*plugin.Row
+	for rows.Next() {
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		rows.Scan(ptrs...)
+
+		strs := make([]string, len(cols))
+		for i, v := range vals {
+			strs[i] = plugin.FormatSQLValue(v)
+		}
+		rowResults = append(rowResults, &plugin.Row{Values: strs})
+	}
+
+	return &plugin.ExecResponse{
+		Result: &plugin.ExecResult{
+			Payload: &pluginpb.PluginV1_ExecResult_Sql{
+				Sql: &plugin.SqlResult{
+					Columns: colMeta,
+					Rows:    rowResults,
+				},
+			},
+		},
+	}, nil
+}
+```
+
+<Tip>
+Use `plugin.FormatSQLValue()` to properly format values from `database/sql`. It handles `[]byte` to string conversion and hex encoding for binary data.
+</Tip>
+</Step>
+
+<Step title="Implement TestConnection (optional)">
+Verify credentials without executing queries:
+
+```go
+func (m *myDriverPlugin) TestConnection(ctx context.Context, req *plugin.TestConnectionRequest) (*plugin.TestConnectionResponse, error) {
+	dsn := buildDSN(req.Connection)
+	db, err := sql.Open("yourdriver", dsn)
+	if err != nil {
+		return &plugin.TestConnectionResponse{Ok: false, Message: fmt.Sprintf("open error: %v", err)}, nil
+	}
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		return &plugin.TestConnectionResponse{Ok: false, Message: fmt.Sprintf("ping error: %v", err)}, nil
+	}
+
+	return &plugin.TestConnectionResponse{Ok: true, Message: "Connection successful"}, nil
+}
+```
+</Step>
+
+<Step title="Build your plugin">
+Build the plugin binary:
+
+```bash
+# From project root
+task build:plugins
+
+# Or manually
+go build -o bin/plugins/mydriver plugins/mydriver/main.go
+```
+
+On Windows, the binary will be `mydriver.exe`.
+</Step>
+
+<Step title="Test your plugin">
+Test each command manually:
+
+```bash
+# Test info command
+./bin/plugins/mydriver info
+
+# Test authforms command
+./bin/plugins/mydriver authforms
+
+# Test exec command (requires JSON on stdin)
+echo '{"connection":{"host":"localhost"},"query":"SELECT 1"}' | ./bin/plugins/mydriver exec
+
+# Test connection
+echo '{"connection":{"host":"localhost","user":"root"}}' | ./bin/plugins/mydriver test-connection
+```
+</Step>
+
+<Step title="Install and use">
+Copy your binary to the plugins directory:
+
+```bash
+cp bin/plugins/mydriver ~/.config/querybox/plugins/  # Linux
+# Or let QueryBox discover it from bin/plugins/
+```
+
+Restart QueryBox or click **Rescan** in the Plugins window. Your driver will appear in the connection creation dialog.
+</Step>
+
+</Steps>
+
+## Complete Template Example
+
+Here's the complete template plugin from `plugins/template/main.go`:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/felixdotgo/querybox/pkg/plugin"
+	pluginpb "github.com/felixdotgo/querybox/rpc/contracts/plugin/v1"
+)
+
+type templatePlugin struct {
+	pluginpb.UnimplementedPluginServiceServer
+}
+
+func (t *templatePlugin) Info(ctx context.Context, _ *pluginpb.PluginV1_InfoRequest) (*plugin.InfoResponse, error) {
+	return &plugin.InfoResponse{
+		Type:        plugin.TypeDriver,
+		Name:        "template",
+		Version:     "0.1.0",
+		Description: "Template plugin (on-demand)",
+		Url:         "https://example.com/template-plugin",
+		Author:      "Querybox Core Team",
+		Capabilities: []string{"demo", "example"},
+		Tags:        []string{"template", "sample"},
+		License:     "MIT",
+		IconUrl:     "https://example.com/icon.png",
+		Contact:     "support@example.com",
+		Metadata:    map[string]string{"exampleKey": "exampleValue"},
+	}, nil
+}
+
+func (t *templatePlugin) Exec(ctx context.Context, req *plugin.ExecRequest) (*plugin.ExecResponse, error) {
+	data := map[string]string{"query": req.Query}
+	for k, v := range req.Connection {
+		data[k] = v
+	}
+	if req.Options != nil {
+		data["options"] = fmt.Sprintf("%v", req.Options)
+	}
+	return &plugin.ExecResponse{
+		Result: &plugin.ExecResult{
+			Payload: &pluginpb.PluginV1_ExecResult_Kv{
+				Kv: &plugin.KeyValueResult{Data: data},
+			},
+		},
+	}, nil
+}
+
+func (t *templatePlugin) AuthForms(ctx context.Context, _ *plugin.AuthFormsRequest) (*plugin.AuthFormsResponse, error) {
+	basic := plugin.AuthForm{Key: "basic", Name: "Basic", Fields: []*plugin.AuthField{
+		{Type: plugin.AuthFieldText, Name: "host", Label: "Host", Required: true, Placeholder: "127.0.0.1"},
+		{Type: plugin.AuthFieldText, Name: "user", Label: "User"},
+		{Type: plugin.AuthFieldPassword, Name: "password", Label: "Password"},
+	}}
+	return &plugin.AuthFormsResponse{Forms: map[string]*plugin.AuthForm{"basic": &basic}}, nil
+}
+
+func (t *templatePlugin) TestConnection(ctx context.Context, req *plugin.TestConnectionRequest) (*plugin.TestConnectionResponse, error) {
+	return &plugin.TestConnectionResponse{Ok: true, Message: "Connection successful (template stub)"}, nil
+}
+
+func main() {
+	plugin.ServeCLI(&templatePlugin{})
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Connection Tree" icon="sitemap" href="/plugins/plugin-contract#connection-tree">
+    Add browseable database structure
+  </Card>
+  <Card title="Plugin Contract" icon="file-contract" href="/plugins/plugin-contract">
+    Learn the complete protobuf specification
+  </Card>
+</CardGroup>

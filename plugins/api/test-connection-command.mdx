@@ -1,0 +1,227 @@
+---
+title: "test-connection Command"
+description: "Validates connection credentials without persisting state"
+---
+
+## Overview
+
+The `test-connection` command verifies that the provided credentials can successfully connect to the data source. This is a fire-and-forget operation - no state should be persisted.
+
+## Command Invocation
+
+```bash
+<plugin-binary> test-connection
+```
+
+**Stdin:** JSON-encoded `TestConnectionRequest` object
+
+**Stdout:** JSON-encoded `TestConnectionResponse` object
+
+**Timeout:** 15 seconds
+
+**Required:** No - optional command for improved UX during connection setup
+
+## Request Parameters
+
+<ParamField name="connection" type="object" required>
+  Plugin-defined key-value map with connection credentials. Same format as `exec` and `connection-tree` commands.
+</ParamField>
+
+## Response Structure
+
+<ResponseField name="ok" type="boolean" required>
+  `true` if connection succeeded, `false` if it failed
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Human-readable success or failure message displayed to the user
+</ResponseField>
+
+## Example Implementation
+
+From `plugins/mysql/main.go`:
+
+```go
+func (m *mysqlPlugin) TestConnection(ctx context.Context, req *plugin.TestConnectionRequest) (*plugin.TestConnectionResponse, error) {
+    dsn, err := buildDSN(req.Connection)
+    if err != nil || dsn == "" {
+        msg := "invalid connection parameters"
+        if err != nil {
+            msg = err.Error()
+        }
+        return &plugin.TestConnectionResponse{
+            Ok:      false,
+            Message: msg,
+        }, nil
+    }
+    
+    db, err := sql.Open("mysql", dsn)
+    if err != nil {
+        return &plugin.TestConnectionResponse{
+            Ok:      false,
+            Message: fmt.Sprintf("open error: %v", err),
+        }, nil
+    }
+    defer db.Close()
+    
+    if err := db.Ping(); err != nil {
+        return &plugin.TestConnectionResponse{
+            Ok:      false,
+            Message: fmt.Sprintf("ping error: %v", err),
+        }, nil
+    }
+    
+    return &plugin.TestConnectionResponse{
+        Ok:      true,
+        Message: "Connection successful",
+    }, nil
+}
+```
+
+## Request Format (stdin)
+
+```json
+{
+  "connection": {
+    "credential_blob": "{\"form\":\"basic\",\"values\":{\"host\":\"127.0.0.1\",\"port\":\"3306\",\"user\":\"root\",\"password\":\"secret\"}}"
+  }
+}
+```
+
+## Response Format (stdout)
+
+### Success Response
+
+```json
+{
+  "ok": true,
+  "message": "Connection successful"
+}
+```
+
+### Failure Response
+
+```json
+{
+  "ok": false,
+  "message": "ping error: Access denied for user 'root'@'localhost' (using password: YES)"
+}
+```
+
+## Implementation Guidelines
+
+### What to Test
+
+1. **Parse credentials**: Validate that required connection parameters are present
+2. **Open connection**: Attempt to establish a connection to the data source
+3. **Ping/verify**: Send a simple query or ping to confirm the connection is live
+4. **Close immediately**: Do not keep the connection open or persist state
+
+### What NOT to Test
+
+- Do not run complex queries or modify data
+- Do not create or alter database objects
+- Do not persist connection state or cache credentials
+- Do not perform expensive operations (keep it fast)
+
+## Error Handling
+
+The host expects errors to be returned in the response object, not via Go's error return:
+
+```go
+// ❌ Incorrect - returns Go error
+if err != nil {
+    return nil, err
+}
+
+// ✅ Correct - returns error in response
+if err != nil {
+    return &plugin.TestConnectionResponse{
+        Ok:      false,
+        Message: err.Error(),
+    }, nil
+}
+```
+
+**Special case**: If the plugin encounters a fatal error (e.g., internal panic), the ServeCLI helper catches it and returns:
+
+```go
+// From plugin.go:210
+res, err := s.TestConnection(context.Background(), &req)
+if err != nil {
+    res = &pluginpb.PluginV1_TestConnectionResponse{
+        Ok:      false,
+        Message: err.Error(),
+    }
+}
+```
+
+## Common Error Messages
+
+### Connection Refused
+
+```json
+{
+  "ok": false,
+  "message": "open error: dial tcp 127.0.0.1:3306: connect: connection refused"
+}
+```
+
+### Authentication Failed
+
+```json
+{
+  "ok": false,
+  "message": "ping error: Access denied for user 'root'@'localhost' (using password: YES)"
+}
+```
+
+### Timeout
+
+```json
+{
+  "ok": false,
+  "message": "ping error: context deadline exceeded"
+}
+```
+
+### Invalid Credentials
+
+```json
+{
+  "ok": false,
+  "message": "invalid connection parameters: missing required field 'host'"
+}
+```
+
+## User Experience Flow
+
+1. User fills in authentication form in the UI
+2. User clicks "Test Connection" button
+3. Host invokes `test-connection` command with form values
+4. Plugin attempts connection and returns result within 15 seconds
+5. Host displays success/failure message to user
+6. If successful, user can save the connection
+7. If failed, user corrects the credentials and retries
+
+## Best Practices
+
+- **Keep it fast**: Aim for < 2 second response time for local connections
+- **Clear messages**: Include specific error details (wrong password vs. server down)
+- **Timeout handling**: Respect context timeouts to avoid hanging the UI
+- **Security**: Never log or expose passwords in error messages
+- **Fallback**: If a plugin can't test meaningfully, return `ok: true` with a message like "Test not available for this plugin"
+
+## Plugins Without Test Support
+
+If a plugin doesn't implement `test-connection`, the host:
+
+1. Allows users to save connections without testing
+2. Connection errors are only discovered when executing the first query
+3. The "Test Connection" button is hidden or disabled in the UI
+
+## Notes
+
+- The command is optional but highly recommended for better UX
+- Plugins that support `test-connection` should also handle the same credential format in `exec` and `connection-tree`
+- The host does not cache test results - each click triggers a new test

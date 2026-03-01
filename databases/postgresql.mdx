@@ -1,0 +1,149 @@
+---
+title: PostgreSQL
+description: Connect to PostgreSQL databases with QueryBox
+---
+
+QueryBox supports PostgreSQL databases through a native driver plugin. Connect to local or remote PostgreSQL servers with flexible SSL/TLS configuration.
+
+## Connection Configuration
+
+<Tabs>
+  <Tab title="Basic">
+    Configure your PostgreSQL connection using individual parameters:
+
+    <ParamField path="host" type="string" required>
+      PostgreSQL server hostname or IP address
+      
+      Default: `localhost`
+    </ParamField>
+
+    <ParamField path="port" type="number">
+      PostgreSQL server port
+      
+      Default: `5432`
+    </ParamField>
+
+    <ParamField path="user" type="string">
+      Database username
+      
+      Default: `postgres`
+    </ParamField>
+
+    <ParamField path="password" type="string">
+      Database password
+    </ParamField>
+
+    <ParamField path="database" type="string">
+      Database name to connect to
+    </ParamField>
+
+    <ParamField path="tls" type="string">
+      SSL/TLS mode for secure connections
+      
+      Options: `disable`, `require`, `verify-ca`, `verify-full`
+      
+      Default: `disable`
+    </ParamField>
+
+    <ParamField path="params" type="string">
+      Additional connection parameters
+      
+      Example: `connect_timeout=5&application_name=myapp`
+    </ParamField>
+  </Tab>
+</Tabs>
+
+## SSL/TLS Modes
+
+PostgreSQL supports multiple SSL modes for different security requirements:
+
+- **disable**: No SSL encryption (default)
+- **require**: SSL encryption required, no certificate verification
+- **verify-ca**: SSL encryption with CA certificate verification
+- **verify-full**: SSL encryption with full certificate verification including hostname
+
+<Info>
+  When using `verify-ca` or `verify-full`, QueryBox automatically uses embedded root certificates for verification.
+</Info>
+
+## Connection String Examples
+
+### Local Development
+```
+host=localhost port=5432 user=postgres password=secret dbname=mydb sslmode=disable
+```
+
+### Remote Server with SSL
+```
+host=db.example.com port=5432 user=app_user password=pass dbname=production sslmode=require
+```
+
+### URL Format
+```
+postgres://user:password@localhost:5432/mydb?sslmode=disable
+```
+
+### With Connection Timeout
+```
+host=localhost port=5432 user=postgres dbname=mydb sslmode=disable connect_timeout=10
+```
+
+## Supported Features
+
+<CardGroup cols={2}>
+  <Card title="SQL Queries" icon="database">
+    Execute SELECT, INSERT, UPDATE, DELETE statements
+  </Card>
+  
+  <Card title="Query Explanation" icon="magnifying-glass">
+    Analyze query execution plans with EXPLAIN
+  </Card>
+  
+  <Card title="Schema Browser" icon="folder-tree">
+    Browse databases, schemas, tables, and views
+  </Card>
+  
+  <Card title="DDL Operations" icon="wrench">
+    Create and drop databases, schemas, and tables
+  </Card>
+</CardGroup>
+
+## Capabilities
+
+- **Query Execution**: Run arbitrary SQL queries and view results
+- **Explain Query**: Prefix queries with `EXPLAIN` to analyze execution plans
+- **Connection Tree**: Navigate database → schema → table hierarchy
+- **Schema Support**: Full support for PostgreSQL schemas (excludes system schemas)
+- **Table & View Detection**: Automatically identifies tables, views, materialized views, and foreign tables
+- **DDL Actions**: Create/drop databases and tables with visual tools
+- **SSL/TLS Support**: Multiple SSL modes with embedded root certificate validation
+
+## Database Structure
+
+The PostgreSQL plugin displays a hierarchical tree:
+
+1. **Server** (connection root)
+2. **Databases** (current database shown)
+3. **Schemas** (excludes `pg_catalog`, `information_schema`, and other system schemas)
+4. **Tables/Views** (includes regular tables, views, materialized views, partitioned tables, and foreign tables)
+
+## Notes
+
+<Info>
+  A default connection timeout of 5 seconds is automatically applied if not specified.
+</Info>
+
+<Warning>
+  If SSL is disabled on the server and you attempt to connect with `sslmode=require`, you'll receive a helpful error message suggesting to use `sslmode=disable`.
+</Warning>
+
+<Tip>
+  When the database name is omitted in the connection, you can browse all schemas in the current database.
+</Tip>
+
+## Plugin Information
+
+- **Version**: 0.1.0
+- **License**: PostgreSQL
+- **Author**: PostgreSQL Global Development Group
+- **Tags**: sql, relational
