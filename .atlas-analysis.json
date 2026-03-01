@@ -1,0 +1,140 @@
+{
+  "projectType": "saas",
+  "projectName": "QueryBox",
+  "projectDescription": "A desktop database management tool for executing and managing queries across multiple database systems through a plugin-based architecture.",
+  "theme": "aspen",
+  "primaryColor": "#2563eb",
+  "lightColor": "#3b82f6",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/plugin-system",
+              "concepts/connection-management",
+              "concepts/credential-storage"
+            ]
+          },
+          {
+            "group": "User Guide",
+            "pages": [
+              "guides/creating-connections",
+              "guides/executing-queries",
+              "guides/browsing-databases",
+              "guides/managing-credentials"
+            ]
+          },
+          {
+            "group": "Supported Databases",
+            "pages": [
+              "databases/mysql",
+              "databases/postgresql",
+              "databases/sqlite",
+              "databases/mongodb",
+              "databases/redis",
+              "databases/arangodb"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Plugin Development",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "plugins/overview",
+              "plugins/quickstart",
+              "plugins/plugin-contract"
+            ]
+          },
+          {
+            "group": "Plugin API",
+            "pages": [
+              "plugins/api/info-command",
+              "plugins/api/exec-command",
+              "plugins/api/authforms-command",
+              "plugins/api/connection-tree-command",
+              "plugins/api/test-connection-command"
+            ]
+          },
+          {
+            "group": "Advanced Topics",
+            "pages": [
+              "plugins/result-types",
+              "plugins/auth-forms",
+              "plugins/building-and-distribution",
+              "plugins/best-practices"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Contributing",
+            "pages": [
+              "development/overview",
+              "development/setup",
+              "development/building",
+              "development/testing"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "development/architecture/overview",
+              "development/architecture/services",
+              "development/architecture/frontend",
+              "development/architecture/event-system"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-database support via plugin system",
+    "Secure credential management with OS keyring integration",
+    "Interactive query editor with syntax highlighting",
+    "Database object browsing with connection trees",
+    "Cross-platform desktop application (Windows, macOS, Linux)",
+    "Extensible plugin SDK for adding custom database drivers",
+    "Multiple result formats (SQL tables, documents, key-value)",
+    "Connection testing and validation"
+  ],
+  "publicApiSurface": [
+    "ConnectionService.ListConnections",
+    "ConnectionService.CreateConnection",
+    "ConnectionService.GetConnection",
+    "ConnectionService.GetCredential",
+    "ConnectionService.DeleteConnection",
+    "PluginManager.ListPlugins",
+    "PluginManager.ExecPlugin",
+    "PluginManager.GetPluginAuthForms",
+    "PluginManager.GetConnectionTree",
+    "PluginManager.TestConnection",
+    "PluginManager.Rescan",
+    "plugin.ServeCLI",
+    "plugin.InfoResponse",
+    "plugin.ExecRequest",
+    "plugin.ExecResponse",
+    "plugin.AuthFormsResponse",
+    "plugin.ConnectionTreeResponse",
+    "plugin.TestConnectionResponse"
+  ]
+}
